@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <!-- Permissive toward LOCAL schemes only (no remote origins). A srcdoc chapter
+       iframe inherits this policy, so it must allow file:/data: resources and the
+       inline engine/runtime scripts we inject. Pre-existing scripts in the EPUB are
+       stripped in reader.js before injection, so 'unsafe-inline' runs only our code. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self' file: data: blob:;
+                 script-src 'self' file: data: 'unsafe-inline';
+                 style-src 'self' file: data: 'unsafe-inline';
+                 img-src 'self' file: data: blob:;
+                 font-src 'self' file: data:;
+                 frame-src 'self' file: data:;
+                 connect-src 'self' file: data:" />
+  <title>Eupub</title>
+  <link rel="stylesheet" href="reader.css" />
+</head>
+<body>
+  <header id="toolbar">
+    <button id="open-btn" class="btn" title="Open an EPUB">Open</button>
+    <button id="sidebar-btn" class="btn" title="Toggle sidebar" disabled>☰</button>
+    <span class="sep"></span>
+    <button id="prev-btn" class="btn" title="Previous page/chapter" disabled>‹</button>
+    <button id="next-btn" class="btn" title="Next page/chapter" disabled>›</button>
+    <span class="sep"></span>
+    <button id="bookmark-btn" class="btn" title="Bookmark this spot" disabled>☆</button>
+    <span class="sep"></span>
+    <button id="font-down" class="btn" title="Smaller text" disabled>A−</button>
+    <button id="font-up" class="btn" title="Larger text" disabled>A+</button>
+    <button id="theme-btn" class="btn" title="Toggle light/dark" disabled>◐</button>
+    <span class="spacer"></span>
+    <label id="euspell-toggle" class="toggle" title="Show text in euspell reformed spelling">
+      <input type="checkbox" id="euspell-checkbox" checked disabled />
+      <span>euspell</span>
+    </label>
+    <span id="book-title" class="book-title"></span>
+  </header>
+
+  <main id="layout">
+    <aside id="sidebar" class="sidebar hidden">
+      <nav class="tabs">
+        <button class="tab active" data-tab="toc">Contents</button>
+        <button class="tab" data-tab="bookmarks">Marks</button>
+        <button class="tab" data-tab="highlights">Notes</button>
+        <button class="tab" data-tab="search">Search</button>
+      </nav>
+      <div id="panel-toc" class="panel active" aria-label="Table of contents"></div>
+      <div id="panel-bookmarks" class="panel"></div>
+      <div id="panel-highlights" class="panel"></div>
+      <div id="panel-search" class="panel">
+        <div class="search-box">
+          <input id="search-input" type="search" placeholder="Search the book…" />
+        </div>
+        <div id="search-results" class="results"></div>
+      </div>
+    </aside>
+
+    <section id="reader" class="reader">
+      <div id="welcome" class="welcome">
+        <h1>Eupub</h1>
+        <p>A standalone EPUB reader that renders books in <strong>euspell</strong> reformed spelling.</p>
+        <button id="open-btn-2" class="btn primary">Open an EPUB…</button>
+        <p class="hint">The same euspell engine that powers the browser extension and the
+          PDF viewer converts each chapter — reused as-is, nothing re-implemented.</p>
+      </div>
+      <iframe id="chapter" class="chapter hidden" sandbox="allow-same-origin allow-scripts"></iframe>
+      <div id="selection-popup" class="selection-popup hidden">
+        <button id="hl-add" class="popup-btn">Highlight</button>
+      </div>
+    </section>
+  </main>
+
+  <footer id="statusbar">
+    <span id="status-left"></span>
+    <span id="status-right"></span>
+  </footer>
+
+  <script src="epub.js"></script>
+  <script src="viewer-runtime.js"></script>
+  <script src="reader.js"></script>
+</body>
+</html>

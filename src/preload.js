@@ -1,0 +1,22 @@
+// Preload — the renderer's only bridge to Node/Electron. Runs with Node access
+// but exposes a small, explicit surface via contextBridge (contextIsolation on).
+const { contextBridge, ipcRenderer } = require('electron');
+const path = require('node:path');
+const url = require('node:url');
+
+contextBridge.exposeInMainWorld('eupub', {
+  // EPUB lifecycle.
+  pickEpub: () => ipcRenderer.invoke('epub:pick'),
+  openPath: (filePath) => ipcRenderer.invoke('epub:openPath', filePath),
+
+  // Engine + filesystem.
+  engineSource: () => ipcRenderer.invoke('engine:source'),
+  readText: (filePath) => ipcRenderer.invoke('fs:readText', filePath),
+
+  // Path helpers (sync, pure) so the renderer can resolve manifest hrefs and
+  // build the file:// base URLs that chapter resources load against.
+  join: (...parts) => path.join(...parts),
+  dirname: (p) => path.dirname(p),
+  basename: (p) => path.basename(p),
+  fileURL: (p) => url.pathToFileURL(p).href,
+});
