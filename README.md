@@ -51,28 +51,41 @@ npm start        # builds the engine bundle, then launches Electron
 `npm run build:engine` rebuilds only the engine bundle (re-run it after changing
 anything under `euspell_ext/src` or rebuilding `euspell_ext/dist`).
 
-## Build a standalone executable
+## Build a standalone installer (recommended)
+
+```sh
+npm run dist
+```
+
+Builds the engine bundle and runs **electron-builder** to produce a single-file
+Windows installer:
+
+```text
+release/eupub-Setup-<version>.exe   ← one file; installs Eupub + shortcuts
+```
+
+It's an NSIS installer (`oneClick: false`): the user picks an install location,
+and gets Start-menu/desktop shortcuts and an uninstaller. The app installs to
+`%LOCALAPPDATA%\Programs\eupub` by default and launches fast (extracted once).
+The icon is the committed `build/icon.ico`. First run of `electron-builder`
+downloads its NSIS toolchain; the Electron runtime comes from the local cache.
+
+> Unsigned, so Windows SmartScreen shows an "unknown publisher" prompt
+> ("More info → Run anyway"). Removing it requires code signing.
+
+## Build an unpacked folder (for quick local testing)
 
 ```sh
 npm run package
 ```
 
-This builds the engine bundle, generates `build/icon.ico` from the euspell PNG
-icons, and runs `@electron/packager` to produce:
+Runs `@electron/packager` to produce `out/eupub-win32-x64/eupub.exe` plus its
+`resources/` and DLLs. The whole folder is the distributable (ship it zipped);
+the lone `.exe` won't run without the files beside it. Handy for fast iteration
+without making an installer.
 
-```text
-out/eupub-win32-x64/eupub.exe   ← double-click to run
-```
-
-The whole `out/eupub-win32-x64/` folder is the distributable — `eupub.exe`
-depends on the `resources/` and DLLs beside it, so ship the folder (e.g. zipped),
-not the lone `.exe`. The app is self-contained: the engine bundle carries the
-lexicon, and only the production dependency (`adm-zip`) is bundled. No network is
-needed at package time as long as the Electron runtime for the pinned version is
-in the local Electron cache.
-
-> A single-file installer (NSIS) or one-file portable `.exe` would need
-> `electron-builder`, which downloads its own toolchain — not used here.
+To regenerate `build/icon.ico` from the logo (needs `sharp` and the Euspell logo
+SVG): `node build/make-icon.js`.
 
 ## Features
 

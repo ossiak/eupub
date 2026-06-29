@@ -13,16 +13,50 @@
     "test": "npm run build:engine && electron test/pipeline.js && electron test/features.js && electron test/reader-e2e.js",
     "test:smoke": "electron test/smoke.js",
     "icon": "node build/make-icon.js",
-    "package": "npm run build:engine && npm run icon && node build/package.js"
+    "package": "npm run build:engine && node build/package.js",
+    "dist": "npm run build:engine && electron-builder --win nsis"
   },
   "devDependencies": {
     "@electron/packager": "^20.0.1",
     "@rollup/plugin-node-resolve": "^15.0.0",
     "electron": "^33.0.0",
+    "electron-builder": "^26.15.3",
     "png-to-ico": "^3.0.1",
     "rollup": "^4.0.0"
   },
   "dependencies": {
     "adm-zip": "^0.5.17"
+  },
+  "build": {
+    "appId": "com.euspell.eupub",
+    "productName": "Eupub",
+    "copyright": "GPL-3.0-or-later",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "src/**/*",
+      "dist/eupub-engine.js",
+      "package.json",
+      "!**/*.map"
+    ],
+    "asar": true,
+    "electronVersion": "33.4.11",
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "eupub-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Eupub",
+      "uninstallDisplayName": "Eupub ${version}"
+    }
   }
 }
