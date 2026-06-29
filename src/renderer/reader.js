@@ -25,10 +25,12 @@
     welcome: $('welcome'),
     statusLeft: $('status-left'),
     statusRight: $('status-right'),
+    progress: $('progress'),
     panelToc: $('panel-toc'),
     panelBookmarks: $('panel-bookmarks'),
     panelHighlights: $('panel-highlights'),
     searchInput: $('search-input'),
+    searchCase: $('search-case'),
     searchResults: $('search-results'),
     popup: $('selection-popup'),
     hlAdd: $('hl-add'),
@@ -59,6 +61,15 @@
     highlights: [],
     selection: null,
     search: { query: '', results: [] },
+    find: null, // clicked search hit currently highlighted { index, path, wordStart, wordEnd }
+    // Per-chapter search index: absPath -> [{ path, origText, refText }]. Built
+    // lazily on first search and cached for the book session.
+    searchIndex: new Map(),
+    // Per-chapter text lengths for the whole-book progress %. Filled async on
+    // load (character-based, so it's independent of font size / window width).
+    charCounts: null,
+    cumChars: null,
+    totalChars: 0,
   };
 
   // --- startup --------------------------------------------------------
@@ -78,6 +89,7 @@
 
     els.euspell.checked = prefs.euspell;
     els.euspell.disabled = false;
+    reflectCaseButton();
 
     wireEvents();
 
@@ -104,11 +116,25 @@
       reRenderKeepingPlace();
     });
 
+    // Over the Contents sidebar the wheel paginates the book rather than
+    // scrolling the TOC — the TOC is navigated by clicking. Registered on the
+    // window in the CAPTURE phase (passive:false) so it intercepts the wheel
+    // before any scroll can start, for the whole sidebar area. Wheel over the
+    // book stays in the iframe; wheel over the other (scrollable) tabs is left
+    // alone. (See onSidebarWheel.)
+    window.addEventListener('wheel', onSidebarWheel, { capture: true, passive: false });
+
     for (const tab of document.querySelectorAll('.tab')) {
       tab.addEventListener('click', () => switchTab(tab.dataset.tab));
     }
     els.searchInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') runSearch(els.searchInput.value.trim());
+    });
+    els.searchCase.addEventListener('click', () => {
+      prefs.searchCaseSensitive = !prefs.searchCaseSensitive;
+      savePrefs();
+      reflectCaseButton();
+      if (state.search.query) runSearch(els.searchInput.value.trim()); // re-run with new setting
     });
     els.hlAdd.addEventListener('click', addHighlightFromSelection);
 
@@ -137,7 +163,12 @@
     state.bookmarks = loadJSON(bmKey(book.sourcePath), []);
     state.highlights = loadJSON(hlKey(book.sourcePath), []);
     state.search = { query: '', results: [] };
+    state.charCounts = null;
+    state.cumChars = null;
+    state.totalChars = 0;
+    state.searchIndex = new Map();
     els.searchInput.value = '';
+    els.progress.textContent = '';
 
     els.bookTitle.textContent = state.model.title;
     document.title = `${state.model.title} — Eupub`;
@@ -151,6 +182,38 @@
     state.currentLocator = saved && saved.locator ? saved.locator : null;
     const start = saved && Number.isInteger(saved.index) && saved.index < state.model.spine.length ? saved.index : 0;
     go(start, { restore: state.currentLocator });
+
+    computeCharCounts(book); // async; fills the progress %
+  }
+
+  // Reads every spine document once and records its visible-text length, so
+  // whole-book progress can be weighted by content. Character-based, so it never
+  // needs recomputing on font/window changes. Aborts if the book changes.
+  async function computeCharCounts(book) {
+    const spine = state.model.spine;
+    const counts = new Array(spine.length).fill(0);
+    for (let i = 0; i < spine.length; i++) {
+      if (state.book !== book) return;
+      try {
+        const html = await window.eupub.readText(spine[i].absPath);
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        for (const s of doc.querySelectorAll('script,style')) s.remove();
+        counts[i] = ((doc.body && doc.body.textContent) || '').replace(/\s+/g, ' ').trim().length;
+      } catch {
+        counts[i] = 0;
+      }
+    }
+    if (state.book !== book) return;
+    const cum = new Array(spine.length).fill(0);
+    let total = 0;
+    for (let i = 0; i < spine.length; i++) {
+      cum[i] = total;
+      total += counts[i];
+    }
+    state.charCounts = counts;
+    state.cumChars = cum;
+    state.totalChars = Math.max(1, total);
+    updateProgress();
   }
 
   // --- chapter rendering ----------------------------------------------
@@ -158,6 +221,7 @@
   function go(index, opts) {
     if (!state.model) return;
     opts = opts || {};
+    state.find = opts.find || null; // a fresh navigation clears any prior find hit
     index = Math.max(0, Math.min(index, state.model.spine.length - 1));
     state.index = index;
     renderChapter(index, opts);
@@ -186,9 +250,13 @@
       highlights: state.highlights
         .filter((h) => h.index === index)
         .map((h) => ({ id: h.id, anchor: h.anchor })),
-      // In-chapter live marks only when euspell is off, so the query (original
-      // spelling) matches the on-screen text. Otherwise the flash shows the spot.
-      search: state.search.query && !prefs.euspell ? { query: state.search.query, occurrence: 0 } : null,
+      // Persistently highlight a clicked search hit, by word index so it works
+      // whether or not the on-screen text is reformed. Survives page turns; kept
+      // across re-renders (font/theme) while it belongs to the current chapter.
+      find:
+        state.find && state.find.index === index
+          ? { path: state.find.path, wordStart: state.find.wordStart, wordEnd: state.find.wordEnd }
+          : null,
     };
 
     els.iframe.srcdoc = buildSrcdoc(html, baseHref, cfg);
@@ -266,6 +334,7 @@
       .eupub-hl { background:rgba(255,214,82,0.45); border-radius:2px; }
       .eupub-search { background:rgba(91,155,213,0.35); border-radius:2px; }
       .eupub-search.eupub-search-current { background:rgba(255,170,60,0.7); }
+      .eupub-find { background:rgba(255,165,0,0.55); border-radius:2px; box-shadow:0 0 0 1px rgba(255,140,0,0.45); }
       .eupub-flash { animation:eupubflash 1.6s ease; }
       @keyframes eupubflash { 0%,100%{ background:transparent } 12%,55%{ background:rgba(255,214,82,0.5) } }`;
   }
@@ -282,6 +351,10 @@
         if (m.locator) state.currentLocator = m.locator;
         updateNavState();
         savePosition();
+        // After a chapter loads (e.g. via a TOC/bookmark/search click, which
+        // leaves focus on a sidebar element), hand keyboard focus to the reader
+        // so arrow keys page the text instead of moving/scrolling the TOC.
+        if (m.type === 'eupub:ready') focusReader();
         break;
       case 'eupub:navigate': {
         const target = String(m.href).split('#')[0];
@@ -310,6 +383,17 @@
     if (els.iframe.contentWindow) els.iframe.contentWindow.postMessage(msg, '*');
   }
 
+  // Move keyboard focus into the chapter so arrow-key paging is handled by the
+  // viewer runtime (and not by a focused sidebar element).
+  function focusReader() {
+    try {
+      els.iframe.focus();
+      if (els.iframe.contentWindow) els.iframe.contentWindow.focus();
+    } catch (e) {
+      /* iframe not ready */
+    }
+  }
+
   // --- navigation -----------------------------------------------------
 
   function navNext() {
@@ -329,11 +413,48 @@
     else if (key === 'ArrowLeft') navPrev();
   }
 
+  // Wheel over the Contents sidebar: never scroll the TOC (click-only), instead
+  // page the book — matching the in-iframe wheel feel (threshold + 250ms lock).
+  // Only acts while the Contents tab is active, so the scrollable Marks/Notes/
+  // Search panels keep their normal wheel scrolling.
+  let tocWheelLock = 0;
+  function onSidebarWheel(e) {
+    if (state.index < 0) return;
+    if (!els.sidebar.contains(e.target)) return;
+    if (!els.panelToc.classList.contains('active')) return;
+    e.preventDefault();
+    const now = Date.now();
+    if (now < tocWheelLock) return;
+    const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    if (Math.abs(d) < 8) return;
+    tocWheelLock = now + 250;
+    if (d > 0) navNext();
+    else navPrev();
+  }
+
   function updateNavState() {
     els.prev.disabled = state.index <= 0 && state.page <= 0;
     els.next.disabled = state.index >= state.model.spine.length - 1 && state.page >= state.pages - 1;
     const chapter = `Ch ${state.index + 1}/${state.model.spine.length}`;
     setStatus('right', `${chapter} · p ${state.page + 1}/${state.pages}`);
+    updateProgress();
+  }
+
+  // Whole-book reading progress as a percentage, weighted by chapter text length.
+  // Within a chapter, progress runs 0 (first page) → 1 (last page); a single-page
+  // chapter counts as done only when it's the last one, so the book ends at 100%.
+  function bookProgress() {
+    if (!state.charCounts || state.index < 0 || !state.totalChars) return null;
+    const i = state.index;
+    const last = state.model.spine.length - 1;
+    let frac = state.pages > 1 ? state.page / (state.pages - 1) : i === last ? 1 : 0;
+    frac = Math.min(1, Math.max(0, frac));
+    const chars = state.cumChars[i] + frac * state.charCounts[i];
+    return Math.min(100, Math.max(0, Math.round((chars / state.totalChars) * 100)));
+  }
+  function updateProgress() {
+    const p = bookProgress();
+    els.progress.textContent = p == null ? '' : `${p}%`;
   }
 
   // --- sidebar panels -------------------------------------------------
@@ -445,6 +566,67 @@
 
   // --- search ---------------------------------------------------------
 
+  function reflectCaseButton() {
+    const on = !!prefs.searchCaseSensitive;
+    els.searchCase.classList.toggle('on', on);
+    els.searchCase.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+
+  // Loads the euspell engine into the reader process (API only, no auto-run) so
+  // search can reform text. Inline <script> injection (allowed by our CSP's
+  // 'unsafe-inline') — no eval, which the CSP forbids.
+  function ensureEngine() {
+    if (window.EupubEngine || !state.engineSource) return;
+    try {
+      window.__eupubNoAuto = true;
+      const s = document.createElement('script');
+      s.textContent = state.engineSource;
+      document.head.appendChild(s);
+      s.remove();
+    } catch (e) {
+      console.error('Could not initialize euspell engine for search', e);
+    }
+  }
+
+  // Builds (and caches) a chapter's search index: each leaf block's original text
+  // plus its euspell-reformed text (so either spelling can match). The reformed
+  // copy is reformed in a detached, reader-owned element via the engine.
+  async function getChapterIndex(i) {
+    const absPath = state.model.spine[i].absPath;
+    let blocks = state.searchIndex.get(absPath);
+    if (blocks) return blocks;
+
+    const html = await window.eupub.readText(absPath);
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    for (const s of doc.querySelectorAll('script')) s.remove();
+    blocks = [];
+    if (doc.body) {
+      let refBody = null;
+      if (window.EupubEngine) {
+        try {
+          refBody = document.importNode(doc.body, true); // reader-owned copy
+          window.EupubEngine.walkTextNodes(refBody, window.EupubEngine.convert);
+        } catch (e) {
+          refBody = null;
+        }
+      }
+      const isLeaf = (b) => !b.querySelector(BLOCK_SEL);
+      const norm = (b) => (b.textContent || '').replace(/\s+/g, ' ').trim();
+      const origBlocks = [...doc.body.querySelectorAll(BLOCK_SEL)].filter(isLeaf);
+      // refBody is a deep clone, so its leaf blocks line up 1:1 with origBlocks.
+      const refBlocks = refBody ? [...refBody.querySelectorAll(BLOCK_SEL)].filter(isLeaf) : [];
+      for (let j = 0; j < origBlocks.length; j++) {
+        blocks.push({
+          path: elPathOf(origBlocks[j], doc.body),
+          origText: norm(origBlocks[j]),
+          refText: refBlocks[j] ? norm(refBlocks[j]) : null,
+        });
+      }
+    }
+    state.searchIndex.set(absPath, blocks);
+    return blocks;
+  }
+
   async function runSearch(query) {
     state.search.query = query;
     state.search.results = [];
@@ -453,24 +635,44 @@
       return;
     }
     setStatus('left', `Searching “${query}”…`);
-    const q = query.toLowerCase();
+    ensureEngine(); // enables matching the euspell spelling too
+    const cs = !!prefs.searchCaseSensitive;
+    const q = cs ? query : query.toLowerCase();
+    const fold = (s) => (cs ? s : s.toLowerCase());
     const results = [];
 
     for (let i = 0; i < state.model.spine.length && results.length < 400; i++) {
-      const html = await window.eupub.readText(state.model.spine[i].absPath);
-      const doc = new DOMParser().parseFromString(html, 'text/html');
-      for (const s of doc.querySelectorAll('script')) s.remove();
-      if (!doc.body) continue;
+      const blocks = await getChapterIndex(i);
+      for (const b of blocks) {
+        // Collect word spans that match the query in EITHER spelling, deduped by
+        // word position (an unchanged word matches both at the same index).
+        const spans = new Map();
+        const scan = (text) => {
+          if (!text) return;
+          const hay = fold(text);
+          let from = 0;
+          let at;
+          while ((at = hay.indexOf(q, from)) !== -1) {
+            const span = wordSpanAt(text, at, q.length);
+            spans.set(span.wordStart + '-' + span.wordEnd, span);
+            from = at + q.length;
+            if (spans.size > 60) break;
+          }
+        };
+        scan(b.origText);
+        scan(b.refText);
+        if (!spans.size) continue;
 
-      const blocks = [...doc.body.querySelectorAll(BLOCK_SEL)].filter((b) => !b.querySelector(BLOCK_SEL));
-      for (const block of blocks) {
-        const text = (block.textContent || '').replace(/\s+/g, ' ').trim();
-        const lower = text.toLowerCase();
-        let from = 0;
-        let at;
-        while ((at = lower.indexOf(q, from)) !== -1) {
-          results.push({ index: i, path: elPathOf(block, doc.body), snippet: snippet(text, at, q.length) });
-          from = at + q.length;
+        // Snippet from the text the reader currently displays.
+        const shown = prefs.euspell && b.refText != null ? b.refText : b.origText;
+        for (const span of spans.values()) {
+          results.push({
+            index: i,
+            path: b.path,
+            wordStart: span.wordStart,
+            wordEnd: span.wordEnd,
+            snippet: snippetAtWords(shown, span.wordStart, span.wordEnd),
+          });
           if (results.length >= 400) break;
         }
         if (results.length >= 400) break;
@@ -496,7 +698,12 @@
       const row = document.createElement('div');
       row.className = 'row';
       row.innerHTML = `<div class="row-meta">${chapterLabel(r.index)}</div><div class="row-text">${r.snippet}</div>`;
-      row.addEventListener('click', () => go(r.index, { restore: { path: r.path }, flash: r.path }));
+      row.addEventListener('click', () =>
+        go(r.index, {
+          restore: { path: r.path },
+          find: { index: r.index, path: r.path, wordStart: r.wordStart, wordEnd: r.wordEnd },
+        })
+      );
       els.searchResults.appendChild(row);
     });
   }
@@ -544,7 +751,7 @@
     localStorage.setItem(hlKey(state.book.sourcePath), JSON.stringify(state.highlights));
   }
   function loadPrefs() {
-    const defaults = { euspell: true, fontSize: 19, theme: 'light' };
+    const defaults = { euspell: true, fontSize: 19, theme: 'light', searchCaseSensitive: false };
     try {
       return Object.assign(defaults, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}'));
     } catch {
@@ -586,6 +793,51 @@
       onDelete();
     });
     row.appendChild(del);
+  }
+  // Word index span (0-based, within the block's text) that a match at
+  // [at, at+len) falls on — recorded at search time so the runtime can highlight
+  // the corresponding (reformed) word by position. Same word regex as the runtime.
+  function wordSpanAt(text, at, len) {
+    const re = /[\p{L}\p{N}]+(?:['’ʼ][\p{L}\p{N}]+)*/gu;
+    const end = at + len;
+    let idx = 0;
+    let start = -1;
+    let last = 0;
+    let m;
+    while ((m = re.exec(text))) {
+      const ws = m.index;
+      const we = ws + m[0].length;
+      if (ws >= end) break;
+      if (we > at) {
+        if (start === -1) start = idx;
+        last = idx;
+      }
+      idx++;
+    }
+    if (start === -1) start = 0;
+    return { wordStart: start, wordEnd: last };
+  }
+  // Inverse of wordSpanAt: the character range of words [wordStart, wordEnd].
+  function wordRangeToChars(text, wordStart, wordEnd) {
+    const re = /[\p{L}\p{N}]+(?:['’ʼ][\p{L}\p{N}]+)*/gu;
+    let idx = 0;
+    let start = -1;
+    let end = -1;
+    let m;
+    while ((m = re.exec(text))) {
+      if (idx === wordStart) start = m.index;
+      if (idx === wordEnd) { end = m.index + m[0].length; break; }
+      idx++;
+    }
+    if (start === -1) return null;
+    if (end === -1) end = text.length;
+    return { start, end };
+  }
+  // A snippet with the matched word(s) marked, built from whichever text is shown.
+  function snippetAtWords(text, wordStart, wordEnd) {
+    const range = wordRangeToChars(text, wordStart, wordEnd);
+    if (!range) return escapeHtml(text.slice(0, 70)) + ' …';
+    return snippet(text, range.start, range.end - range.start);
   }
   function elPathOf(el, body) {
     const p = [];

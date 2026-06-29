@@ -24,6 +24,7 @@
     <span class="sep"></span>
     <button id="prev-btn" class="btn" title="Previous page/chapter" disabled>‹</button>
     <button id="next-btn" class="btn" title="Next page/chapter" disabled>›</button>
+    <span id="progress" class="progress" title="Reading progress through the book"></span>
     <span class="sep"></span>
     <button id="bookmark-btn" class="btn" title="Bookmark this spot" disabled>☆</button>
     <span class="sep"></span>
@@ -39,7 +40,7 @@
   </header>
 
   <main id="layout">
-    <aside id="sidebar" class="sidebar hidden">
+    <aside id="sidebar" class="sidebar">
       <nav class="tabs">
         <button class="tab active" data-tab="toc">Contents</button>
         <button class="tab" data-tab="bookmarks">Marks</button>
@@ -52,6 +53,7 @@
       <div id="panel-search" class="panel">
         <div class="search-box">
           <input id="search-input" type="search" placeholder="Search the book…" />
+          <button id="search-case" class="case-btn" title="Match case" aria-pressed="false">Aa</button>
         </div>
         <div id="search-results" class="results"></div>
       </div>

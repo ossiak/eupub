@@ -277,22 +277,24 @@ window.EupubViewerRuntime = function () {
     }
   }
 
-  // In-chapter search: mark every case-insensitive match of `query` and scroll
-  // to the nth one. Matches the (possibly reformed) on-screen text.
-  function searchMarks(query, occurrence) {
+  // In-chapter search: mark every match of `query` and scroll to the nth one.
+  // Matches the (possibly reformed) on-screen text; case-sensitive when asked.
+  function searchMarks(query, occurrence, caseSensitive) {
     unwrap('eupub-search');
     if (!query) return;
-    var q = query.toLowerCase();
+    var cs = !!caseSensitive;
+    var q = cs ? query : query.toLowerCase();
+    var fold = function (s) { return cs ? s : s.toLowerCase(); };
     var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
       acceptNode: function (node) {
         var t = node.parentElement && node.parentElement.tagName;
         if (t === 'SCRIPT' || t === 'STYLE') return NodeFilter.FILTER_REJECT;
-        return node.nodeValue.toLowerCase().indexOf(q) === -1 ? NodeFilter.FILTER_SKIP : NodeFilter.FILTER_ACCEPT;
+        return fold(node.nodeValue).indexOf(q) === -1 ? NodeFilter.FILTER_SKIP : NodeFilter.FILTER_ACCEPT;
       },
     });
     var hits = [], node;
     while ((node = walker.nextNode())) {
-      var text = node.nodeValue.toLowerCase();
+      var text = fold(node.nodeValue);
       var from = 0, at;
       while ((at = text.indexOf(q, from)) !== -1) { hits.push({ node: node, at: at }); from = at + q.length; }
     }
@@ -311,6 +313,39 @@ window.EupubViewerRuntime = function () {
       gotoEl(marks[idx], false);
     }
     post('eupub:searchmarks', { count: marks.length });
+  }
+
+  // Persistent highlight of a clicked search hit, located by WORD INDEX (not by
+  // text), since euspell reforms each word in place but keeps word order. So the
+  // Nth word of the original block — recorded at search time — is the Nth word
+  // here, even though it's now spelled differently.
+  var WORD_RE = /[\p{L}\p{N}]+(?:['’ʼ][\p{L}\p{N}]+)*/gu;
+  function wordRangeCharOffsets(text, wordStart, wordEnd) {
+    WORD_RE.lastIndex = 0;
+    var idx = 0, startOff = -1, endOff = -1, m;
+    while ((m = WORD_RE.exec(text))) {
+      if (idx === wordStart) startOff = m.index;
+      if (idx === wordEnd) { endOff = m.index + m[0].length; break; }
+      idx++;
+    }
+    if (startOff === -1) return null;
+    if (endOff === -1) endOff = text.length;
+    return { start: startOff, end: endOff };
+  }
+  function applyFind(find) {
+    unwrap('eupub-find');
+    if (!find || !find.path) return null;
+    var block = elResolve(find.path);
+    if (!block) return null;
+    var off = wordRangeCharOffsets(block.textContent || '', find.wordStart, find.wordEnd);
+    if (!off) return null;
+    var s = resolveCharOffset(block, off.start);
+    var e = resolveCharOffset(block, off.end);
+    if (!s || !e) return null;
+    var r = document.createRange();
+    try { r.setStart(s.node, s.offset); r.setEnd(e.node, e.offset); } catch (err) { return null; }
+    wrapRange(r, 'eupub-find', null);
+    return document.querySelector('span.eupub-find');
   }
 
   // --- selection -> reader (offer to highlight) ---
@@ -380,7 +415,7 @@ window.EupubViewerRuntime = function () {
       case 'eupub:setHighlights': applyHighlights(m.highlights); break;
       case 'eupub:addHighlight': { var r = rangeFromAnchor(m.anchor); if (r) wrapRange(r, 'eupub-hl', m.id); break; }
       case 'eupub:removeHighlight': removeHighlight(m.id); break;
-      case 'eupub:search': searchMarks(m.query, m.occurrence); break;
+      case 'eupub:search': searchMarks(m.query, m.occurrence, m.caseSensitive); break;
       case 'eupub:clearSearch': unwrap('eupub-search'); break;
     }
   });
@@ -408,7 +443,11 @@ window.EupubViewerRuntime = function () {
       var fe = elResolve(cfg.flash);
       if (fe) { fe.classList.add('eupub-flash'); setTimeout(function () { fe.classList.remove('eupub-flash'); }, 1600); }
     }
-    if (cfg.search && cfg.search.query) searchMarks(cfg.search.query, cfg.search.occurrence);
+    if (cfg.search && cfg.search.query) searchMarks(cfg.search.query, cfg.search.occurrence, cfg.search.caseSensitive);
+    if (cfg.find) {
+      var hit = applyFind(cfg.find);
+      if (hit) gotoEl(hit, false); // scroll to the highlighted word (overrides restore)
+    }
     post('eupub:ready', { page: currentPage, pages: pageCount, mode: mode, locator: currentLocator() });
   }
   // Images affect layout/page count, so settle on full load (with a DOM-ready

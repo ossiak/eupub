@@ -13,8 +13,13 @@ function run() {
   walkTextNodes(document.body, convert);
 }
 
-// Exposed so the reader can re-run conversion if a chapter mutates (it normally
-// does not — EPUB chapters are static — but this keeps the hook available and
-// mirrors the content-script contract). Auto-run once on injection.
+// Exposed so the reader can re-run conversion if a chapter mutates, and — the
+// reason it's a public API — so the reader process can reform arbitrary text
+// (a detached element) to build a euspell search index. walkTextNodes uses the
+// ambient document's createTreeWalker, so the reader reforms a node it owns.
 window.__eupubConvert = run;
-run();
+window.EupubEngine = { convert: convert, walkTextNodes: walkTextNodes };
+
+// Auto-run in chapter iframes. The reader loads this bundle with __eupubNoAuto
+// set, to obtain the API only (so it does NOT reform the reader's own UI).
+if (!window.__eupubNoAuto) run();

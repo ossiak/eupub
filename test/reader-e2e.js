@@ -57,6 +57,12 @@ app.whenReady().then(async () => {
     const euspellOk = /peeple/.test(body);
     const statusRight = document.getElementById('status-right').textContent;
 
+    // After a chapter loads, focus should be in the reader (chapter iframe), not
+    // a sidebar element — so arrow keys page the text. Capture before any later
+    // test step (bookmark/search clicks) moves focus.
+    await sleep(150);
+    const focusedId = document.activeElement ? document.activeElement.id : '';
+
     // Link coloring: a real link should be blue; an href-less anchor (a link
     // target) must inherit the text color, not turn blue.
     const idoc = iframe.contentDocument;
@@ -73,10 +79,36 @@ app.whenReady().then(async () => {
 
     // Search: type a known word + Enter, expect results.
     const input = document.getElementById('search-input');
-    input.value = 'through';
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    let searchRows = 0;
-    for (let i = 0; i < 40; i++) { searchRows = document.querySelectorAll('#search-results .row').length; if (searchRows) break; await sleep(100); }
+    const runFind = (term) => {
+      input.value = term;
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    };
+    const countRows = async () => {
+      let n = 0;
+      for (let i = 0; i < 40; i++) { n = document.querySelectorAll('#search-results .row').length; if (n) break; await sleep(100); }
+      return n;
+    };
+    runFind('through');
+    const searchRows = await countRows();
+
+    // Case sensitivity: "The" matches "The"/"the"/"they" when off, only exact
+    // "The" when on. Wait a fixed beat after each (re-)search so the count
+    // reflects the NEW query, not the previous results still on screen.
+    const rows = () => document.querySelectorAll('#search-results .row').length;
+    runFind('The');
+    await sleep(700);
+    const caseOffCount = rows();                       // insensitive (default)
+    document.getElementById('search-case').click();    // toggle ON -> auto re-runs
+    await sleep(700);
+    const caseOnCount = rows();
+    document.getElementById('search-case').click();    // restore default (off)
+    await sleep(400);
+
+    // The euspell spelling is searchable too: 'peeple' (reform of 'people')
+    // matches via the reformed index, not just the original 'people'.
+    runFind('peeple');
+    await sleep(900);
+    const euspellSearchRows = rows();
 
     // Window-space center points for hover probing (iframe offset + element rect).
     function pt(sel) {
@@ -87,8 +119,19 @@ app.whenReady().then(async () => {
       return { x: Math.round(ir.left + r.left + r.width / 2), y: Math.round(ir.top + r.top + r.height / 2) };
     }
 
+    // Sidebar should be open by default.
+    const sidebarOpen = !document.getElementById('sidebar').classList.contains('hidden');
+
+    // Whole-book progress % appears in the toolbar once char counts load (async).
+    let progressText = '';
+    for (let i = 0; i < 40; i++) {
+      progressText = document.getElementById('progress').textContent;
+      if (progressText) break;
+      await sleep(100);
+    }
+
     return {
-      euspellOk, statusRight, bmRows, bmStored, searchRows, plainColor, linkColor,
+      euspellOk, statusRight, bmRows, bmStored, searchRows, caseOffCount, caseOnCount, euspellSearchRows, plainColor, linkColor, sidebarOpen, focusedId, progressText,
       anchorPt: pt('#anchortarget'), probePt: pt('.probe'),
       sample: body.slice(0, 80),
     };
@@ -113,11 +156,59 @@ app.whenReady().then(async () => {
   await hover(result.anchorPt);
   const anchorHoverColor = await colorOf('#anchortarget');
 
+  // Clicking a result highlights the term itself, by word index, so it works even
+  // though the page shows reformed spelling: 'people' -> highlighted 'peeple'.
+  // (Run after hover probing, since the result-click reloads the chapter.)
+  const findText = await win.webContents.executeJavaScript(`(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const input = document.getElementById('search-input');
+    input.value = 'people';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await sleep(700);
+    const row = document.querySelector('#search-results .row');
+    if (!row) return '(no result)';
+    row.click();
+    const iframe = document.getElementById('chapter');
+    for (let i = 0; i < 60; i++) {
+      const sp = iframe.contentDocument && iframe.contentDocument.querySelector('span.eupub-find');
+      if (sp) return sp.textContent.trim();
+      await sleep(100);
+    }
+    return '(no highlight)';
+  })()`);
+
+  // Wheel-over-Contents (run last — it advances the chapter). The wheel must be
+  // prevented (TOC won't scroll) and must page the book past the 1-page ch1 to ch2.
+  const wheel = await win.webContents.executeJavaScript(`(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    // The handler only acts while Contents is the active tab (so other panels
+    // scroll normally); an earlier step switched to Marks, so re-activate it.
+    document.querySelector('.tab[data-tab="toc"]').click();
+    await sleep(50);
+    const evt = new WheelEvent('wheel', { deltaY: 120, bubbles: true, cancelable: true });
+    document.getElementById('panel-toc').dispatchEvent(evt);
+    let advanced = false;
+    for (let i = 0; i < 50; i++) {
+      if (/Ch 2\\//.test(document.getElementById('status-right').textContent)) { advanced = true; break; }
+      await sleep(100);
+    }
+    return { prevented: evt.defaultPrevented, advanced };
+  })()`);
+
   const checks = [
     ['euspell-render', result.euspellOk, result.sample],
     ['status-wired', !!result.statusRight, 'status="' + result.statusRight + '"'],
     ['bookmark-add', result.bmRows >= 1 && result.bmStored, 'rows=' + result.bmRows],
     ['search', result.searchRows >= 1, 'rows=' + result.searchRows],
+    [
+      'search-case-sensitive',
+      result.caseOnCount >= 1 && result.caseOffCount > result.caseOnCount,
+      'off=' + result.caseOffCount + ' on=' + result.caseOnCount,
+    ],
+    ['search-euspell-form', result.euspellSearchRows >= 1, 'peeple rows=' + result.euspellSearchRows],
+    // The highlighted hit is the reformed word (people -> peeple), proving the
+    // term itself stays highlighted rather than the whole paragraph flashing.
+    ['search-highlights-term', findText === 'peeple', 'find="' + findText + '"'],
     [
       'link-color',
       result.linkColor === 'rgb(31, 111, 235)' && result.plainColor !== 'rgb(31, 111, 235)',
@@ -127,6 +218,14 @@ app.whenReady().then(async () => {
     // href-less anchor must NOT (proves the fix neutralizes book a:hover).
     ['hover-control', probeHoverColor === teal, 'probe=' + probeHoverColor],
     ['hover-anchor-fix', anchorHoverColor !== teal, 'anchor=' + anchorHoverColor],
+    ['sidebar-default-open', result.sidebarOpen, 'open=' + result.sidebarOpen],
+    ['reader-focused-after-load', result.focusedId === 'chapter', 'activeElement=#' + result.focusedId],
+    [
+      'progress-percent',
+      /^\d+%$/.test(result.progressText) && parseInt(result.progressText, 10) >= 0 && parseInt(result.progressText, 10) <= 100,
+      'progress="' + result.progressText + '"',
+    ],
+    ['toc-wheel-paginates', wheel.prevented && wheel.advanced, 'prevented=' + wheel.prevented + ' advanced=' + wheel.advanced],
   ];
   for (const [name, ok, info] of checks) console.log((ok ? 'PASS ' : 'FAIL ') + name.padEnd(16), info);
   const passed = checks.every((c) => c[1]);
