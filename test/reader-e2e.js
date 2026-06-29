@@ -177,6 +177,24 @@ app.whenReady().then(async () => {
     return '(no highlight)';
   })()`);
 
+  // Recent-files menu: loading the book should have recorded it under
+  // 'eupub:recent'; clicking Open opens a menu whose first item is the picker
+  // and which lists the recent book; an outside click closes it.
+  const recentMenu = await win.webContents.executeJavaScript(`(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const stored = JSON.parse(localStorage.getItem('eupub:recent') || '[]');
+    document.getElementById('open-btn').click();   // open the menu
+    await sleep(50);
+    const menu = document.getElementById('open-menu');
+    const opened = !menu.classList.contains('hidden');
+    const first = menu.querySelector('.menu-item') ? menu.querySelector('.menu-item').textContent : '';
+    const labels = [...menu.querySelectorAll('.menu-item.recent .menu-item-label')].map((n) => n.textContent);
+    document.body.click();                          // outside click closes it
+    await sleep(20);
+    const closed = menu.classList.contains('hidden');
+    return { storedLen: stored.length, opened, first, recentCount: labels.length, firstLabel: labels[0] || '', closed };
+  })()`);
+
   // Wheel-over-Contents (run last — it advances the chapter). The wheel must be
   // prevented (TOC won't scroll) and must page the book past the 1-page ch1 to ch2.
   const wheel = await win.webContents.executeJavaScript(`(async () => {
@@ -226,6 +244,13 @@ app.whenReady().then(async () => {
       'progress="' + result.progressText + '"',
     ],
     ['toc-wheel-paginates', wheel.prevented && wheel.advanced, 'prevented=' + wheel.prevented + ' advanced=' + wheel.advanced],
+    ['recent-stored', recentMenu.storedLen >= 1, 'recent=' + recentMenu.storedLen],
+    [
+      'recent-menu-opens',
+      recentMenu.opened && recentMenu.first === 'Open EPUB…' && recentMenu.recentCount >= 1,
+      'opened=' + recentMenu.opened + ' first="' + recentMenu.first + '" recents=' + recentMenu.recentCount + ' label="' + recentMenu.firstLabel + '"',
+    ],
+    ['recent-menu-closes', recentMenu.closed, 'closed=' + recentMenu.closed],
   ];
   for (const [name, ok, info] of checks) console.log((ok ? 'PASS ' : 'FAIL ') + name.padEnd(16), info);
   const passed = checks.every((c) => c[1]);

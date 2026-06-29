@@ -11,6 +11,8 @@
   const els = {
     open: $('open-btn'),
     open2: $('open-btn-2'),
+    openWrap: $('open-wrap'),
+    openMenu: $('open-menu'),
     sidebar: $('sidebar'),
     sidebarBtn: $('sidebar-btn'),
     prev: $('prev-btn'),
@@ -41,7 +43,9 @@
   const BLOCK_SEL = 'p,div,section,article,blockquote,li,dd,dt,h1,h2,h3,h4,h5,h6,figure,figcaption,td,th,pre,img,table';
 
   const PREFS_KEY = 'eupub:prefs';
-  const LAST_KEY = 'eupub:last';
+  const LAST_KEY = 'eupub:last'; // legacy single-slot; read once to seed recents
+  const RECENT_KEY = 'eupub:recent';
+  const RECENT_MAX = 10;
   const posKey = (s) => `eupub:pos:${s}`;
   const bmKey = (s) => `eupub:bm:${s}`;
   const hlKey = (s) => `eupub:hl:${s}`;
@@ -93,16 +97,32 @@
 
     wireEvents();
 
-    const last = localStorage.getItem(LAST_KEY);
+    // Reopen the most recent book on launch. Fall back to the legacy single-slot
+    // key so existing users keep their last book before any recent is recorded.
+    const recents = loadRecents();
+    const last = (recents[0] && recents[0].path) || localStorage.getItem(LAST_KEY);
     if (last) {
       const book = await window.eupub.openPath(last);
       if (book) await loadBook(book);
+      else pruneRecent(last); // file moved/deleted since last session
     }
   }
 
   function wireEvents() {
-    els.open.addEventListener('click', openBook);
+    // Toolbar Open is a menu: pick a file or reopen a recent one. The welcome
+    // screen's Open is the bare picker (its own primary call to action).
+    els.open.addEventListener('click', (e) => {
+      e.stopPropagation(); // don't let the document handler immediately reclose
+      toggleOpenMenu();
+    });
     els.open2.addEventListener('click', openBook);
+    els.openMenu.addEventListener('click', (e) => e.stopPropagation());
+    document.addEventListener('click', (e) => {
+      if (!els.openWrap.contains(e.target)) closeOpenMenu();
+    });
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeOpenMenu();
+    });
     els.sidebarBtn.addEventListener('click', () => els.sidebar.classList.toggle('hidden'));
     els.prev.addEventListener('click', navPrev);
     els.next.addEventListener('click', navNext);
@@ -149,10 +169,19 @@
 
   async function openBook() {
     const book = await window.eupub.pickEpub();
-    if (book) {
-      localStorage.setItem(LAST_KEY, book.sourcePath);
-      await loadBook(book);
+    if (book) await loadBook(book); // loadBook records it in the recent list
+  }
+
+  // Open a book chosen from the recent list. If it can no longer be opened
+  // (moved or deleted), drop it from the list and say so.
+  async function openRecent(filePath) {
+    const book = await window.eupub.openPath(filePath);
+    if (!book) {
+      pruneRecent(filePath);
+      setStatus('left', 'That book could not be opened — removed from recent.');
+      return;
     }
+    await loadBook(book);
   }
 
   async function loadBook(book) {
@@ -172,6 +201,7 @@
 
     els.bookTitle.textContent = state.model.title;
     document.title = `${state.model.title} — Eupub`;
+    pushRecent(book.sourcePath, state.model.title);
     renderToc();
     renderBookmarks();
     renderHighlights();
@@ -767,6 +797,90 @@
       return v == null ? fallback : v;
     } catch {
       return fallback;
+    }
+  }
+
+  // Recent books: [{ path, title }], most-recent-first, deduped by path, capped.
+  function loadRecents() {
+    const v = loadJSON(RECENT_KEY, []);
+    return Array.isArray(v) ? v.filter((r) => r && r.path) : [];
+  }
+  function saveRecents(list) {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(list));
+  }
+  function pushRecent(filePath, title) {
+    if (!filePath) return;
+    const list = loadRecents().filter((r) => r.path !== filePath);
+    list.unshift({ path: filePath, title: title || window.eupub.basename(filePath) });
+    saveRecents(list.slice(0, RECENT_MAX));
+  }
+  function pruneRecent(filePath) {
+    saveRecents(loadRecents().filter((r) => r.path !== filePath));
+    if (!els.openMenu.classList.contains('hidden')) renderOpenMenu();
+  }
+
+  // --- open menu ------------------------------------------------------
+
+  function toggleOpenMenu() {
+    if (els.openMenu.classList.contains('hidden')) {
+      renderOpenMenu();
+      els.openMenu.classList.remove('hidden');
+      els.open.setAttribute('aria-expanded', 'true');
+    } else {
+      closeOpenMenu();
+    }
+  }
+  function closeOpenMenu() {
+    els.openMenu.classList.add('hidden');
+    els.open.setAttribute('aria-expanded', 'false');
+  }
+  function renderOpenMenu() {
+    const menu = els.openMenu;
+    menu.textContent = '';
+
+    const pick = document.createElement('button');
+    pick.className = 'menu-item';
+    pick.textContent = 'Open EPUB…';
+    pick.addEventListener('click', () => {
+      closeOpenMenu();
+      openBook();
+    });
+    menu.appendChild(pick);
+
+    const sep = document.createElement('div');
+    sep.className = 'menu-sep';
+    menu.appendChild(sep);
+
+    const recents = loadRecents();
+    if (!recents.length) {
+      const empty = document.createElement('div');
+      empty.className = 'menu-empty';
+      empty.textContent = 'No recent books';
+      menu.appendChild(empty);
+      return;
+    }
+    for (const r of recents) {
+      const item = document.createElement('button');
+      item.className = 'menu-item recent';
+      item.title = r.path;
+      const label = document.createElement('span');
+      label.className = 'menu-item-label';
+      label.textContent = r.title || window.eupub.basename(r.path);
+      item.appendChild(label);
+      item.addEventListener('click', () => {
+        closeOpenMenu();
+        openRecent(r.path);
+      });
+      const del = document.createElement('span');
+      del.className = 'menu-del';
+      del.textContent = '×';
+      del.title = 'Remove from recent';
+      del.addEventListener('click', (e) => {
+        e.stopPropagation();
+        pruneRecent(r.path);
+      });
+      item.appendChild(del);
+      menu.appendChild(item);
     }
   }
 

@@ -19,7 +19,10 @@
 </head>
 <body>
   <header id="toolbar">
-    <button id="open-btn" class="btn" title="Open an EPUB">Open</button>
+    <div id="open-wrap" class="menu-wrap">
+      <button id="open-btn" class="btn" title="Open an EPUB" aria-haspopup="true" aria-expanded="false">Open ▾</button>
+      <div id="open-menu" class="menu hidden" role="menu"></div>
+    </div>
     <button id="sidebar-btn" class="btn" title="Toggle sidebar" disabled>☰</button>
     <span class="sep"></span>
     <button id="prev-btn" class="btn" title="Previous page/chapter" disabled>‹</button>
