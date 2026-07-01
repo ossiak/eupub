@@ -9,6 +9,7 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { openEpub: extractEpub } = require('./epub-extract');
+const { openText } = require('./text-open');
 
 /** @type {BrowserWindow | null} */
 let win = null;
@@ -63,21 +64,25 @@ app.on('quit', () => {
 
 // --- IPC -------------------------------------------------------------------
 
-// Show a file picker, then open the chosen EPUB. Returns null if cancelled.
+// Show a file picker, then open the chosen book. Returns null if cancelled.
 ipcMain.handle('epub:pick', async () => {
   const res = await dialog.showOpenDialog(win, {
-    title: 'Open EPUB',
-    filters: [{ name: 'EPUB books', extensions: ['epub'] }],
+    title: 'Open book',
+    filters: [
+      { name: 'Books', extensions: ['epub', 'txt'] },
+      { name: 'EPUB books', extensions: ['epub'] },
+      { name: 'Text files', extensions: ['txt'] },
+    ],
     properties: ['openFile'],
   });
   if (res.canceled || !res.filePaths[0]) return null;
-  return openEpub(res.filePaths[0]);
+  return openBook(res.filePaths[0]);
 });
 
-// Open an EPUB by absolute path (used to reopen the last book on launch).
+// Open a book by absolute path (used to reopen the last book on launch).
 ipcMain.handle('epub:openPath', (_e, filePath) => {
   if (!filePath || !fs.existsSync(filePath)) return null;
-  return openEpub(filePath);
+  return openBook(filePath);
 });
 
 // Source of the bundled euspell engine, injected into each chapter iframe.
@@ -92,9 +97,10 @@ ipcMain.handle('engine:source', () => {
 // Read a UTF-8 text file (chapter XHTML) from the extracted book.
 ipcMain.handle('fs:readText', (_e, p) => fs.readFileSync(p, 'utf8'));
 
-// Extract an EPUB and remember its temp dir so we can clean it up on quit.
-function openEpub(filePath) {
-  const book = extractEpub(filePath);
+// Open a book by extension — extract an EPUB, or synthesize an EPUB-shaped book
+// from a .txt — and remember its temp dir so we can clean it up on quit.
+function openBook(filePath) {
+  const book = /\.txt$/i.test(filePath) ? openText(filePath) : extractEpub(filePath);
   tempDirs.push(book.rootDir);
   return book;
 }

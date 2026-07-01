@@ -10,7 +10,7 @@
     "build": "npm run build:engine",
     "start": "npm run build:engine && electron .",
     "dev": "electron .",
-    "test": "npm run build:engine && electron test/pipeline.js && electron test/features.js && electron test/reader-e2e.js",
+    "test": "npm run build:engine && electron test/pipeline.js && electron test/text-pipeline.js && electron test/features.js && electron test/reader-e2e.js",
     "test:smoke": "electron test/smoke.js",
     "icon": "node build/make-icon.js",
     "package": "npm run build:engine && node build/package.js",
