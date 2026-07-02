@@ -196,8 +196,13 @@ window.EupubViewerRuntime = function () {
   }
   function gotoFragment(frag) {
     if (!frag) return;
-    var el = null;
-    try { el = document.getElementById(frag) || document.querySelector('[name="' + (window.CSS && CSS.escape ? CSS.escape(frag) : frag) + '"]'); } catch (e) {}
+    // getElementById / getElementsByName take a raw id/name — no selector-string
+    // escaping to get wrong (an EPUB fragment can be any string).
+    var el = document.getElementById(frag);
+    if (!el) {
+      var named = document.getElementsByName(frag);
+      el = named && named.length ? named[0] : null;
+    }
     if (el) gotoEl(el, false);
   }
   function emitPosition() {

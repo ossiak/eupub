@@ -41,6 +41,12 @@
   // Block-level selector: matches viewer-runtime's BLOCK, used to find the leaf
   // text blocks that search results anchor to.
   const BLOCK_SEL = 'p,div,section,article,blockquote,li,dd,dt,h1,h2,h3,h4,h5,h6,figure,figcaption,td,th,pre,img,table';
+  // Leaf-detection selector: BLOCK_SEL without img. An <img> is atomic (no text
+  // to index separately), so a text block that merely contains an inline image
+  // (e.g. "<p>text <img></p>") must still count as a leaf — otherwise its text
+  // is dropped from the search index. Container blocks (incl. table) still
+  // disqualify a leaf, since their text lives in nested leaves (td/th, …).
+  const LEAF_BLOCK_SEL = BLOCK_SEL.split(',').filter((t) => t !== 'img').join(',');
 
   const PREFS_KEY = 'eupub:prefs';
   const LAST_KEY = 'eupub:last'; // legacy single-slot; read once to seed recents
@@ -92,7 +98,12 @@
     state.runtimeSource = window.EupubViewerRuntime.toString();
 
     els.euspell.checked = prefs.euspell;
-    els.euspell.disabled = false;
+    // Only offer the toggle if the engine actually loaded; otherwise it would
+    // silently do nothing (buildSrcdoc skips conversion with no engine source).
+    els.euspell.disabled = !state.engineSource;
+    els.euspell.title = state.engineSource
+      ? 'Show text in euspell reformed spelling'
+      : 'euspell engine not built — run "npm run build:engine"';
     reflectCaseButton();
 
     wireEvents();
@@ -513,7 +524,10 @@
 
   function highlightToc() {
     for (const a of els.panelToc.children) {
-      a.classList.toggle('active', Number(a.dataset.index) === state.index);
+      // dataset.index is '' for non-navigable entries (no spineIndex); guard so
+      // Number('') === 0 doesn't mark them active while on the first chapter.
+      const active = a.dataset.index !== '' && Number(a.dataset.index) === state.index;
+      a.classList.toggle('active', active);
     }
   }
 
@@ -640,7 +654,7 @@
           refBody = null;
         }
       }
-      const isLeaf = (b) => !b.querySelector(BLOCK_SEL);
+      const isLeaf = (b) => !b.querySelector(LEAF_BLOCK_SEL);
       const norm = (b) => (b.textContent || '').replace(/\s+/g, ' ').trim();
       const origBlocks = [...doc.body.querySelectorAll(BLOCK_SEL)].filter(isLeaf);
       // refBody is a deep clone, so its leaf blocks line up 1:1 with origBlocks.
@@ -727,7 +741,9 @@
     results.forEach((r) => {
       const row = document.createElement('div');
       row.className = 'row';
-      row.innerHTML = `<div class="row-meta">${chapterLabel(r.index)}</div><div class="row-text">${r.snippet}</div>`;
+      // chapterLabel comes from the EPUB's TOC (untrusted) — escape it. r.snippet
+      // is already escaped in snippet()/snippetAtWords.
+      row.innerHTML = `<div class="row-meta">${escapeHtml(chapterLabel(r.index))}</div><div class="row-text">${r.snippet}</div>`;
       row.addEventListener('click', () =>
         go(r.index, {
           restore: { path: r.path },
