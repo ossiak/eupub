@@ -8,14 +8,15 @@
   "scripts": {
     "build:engine": "rollup -c rollup.engine.config.mjs",
     "build:engine:mobile": "rollup -c rollup.engine.mobile.config.mjs",
-    "build": "npm run build:engine",
-    "start": "npm run build:engine && electron .",
+    "build:lexicon": "node build/copy-lexicon.js",
+    "build": "npm run build:engine && npm run build:engine:mobile && npm run build:lexicon",
+    "start": "npm run build && electron .",
     "dev": "electron .",
-    "test": "node --test test/android-bridge.test.js && npm run build:engine && electron test/pipeline.js && electron test/text-pipeline.js && electron test/features.js && electron test/reader-e2e.js",
+    "test": "node --test test/android-bridge.test.js && npm run build && electron test/pipeline.js && electron test/text-pipeline.js && electron test/features.js && electron test/reader-e2e.js",
     "test:smoke": "electron test/smoke.js",
     "icon": "node build/make-icon.js",
-    "package": "npm run build:engine && node build/package.js",
-    "dist": "npm run build:engine && electron-builder --win nsis"
+    "package": "npm run build && node build/package.js",
+    "dist": "npm run build && electron-builder --win nsis"
   },
   "devDependencies": {
     "@electron/packager": "^20.0.1",
@@ -37,7 +38,8 @@
     },
     "files": [
       "src/**/*",
-      "dist/eupub-engine.js",
+      "dist/eupub-engine.mobile.js",
+      "dist/lexicon.mjs",
       "package.json",
       "!**/*.map"
     ],

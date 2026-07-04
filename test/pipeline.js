@@ -13,6 +13,9 @@ app.disableHardwareAcceleration();
 
 ipcMain.handle('epub:openPath', (_e, p) => openEpub(p));
 ipcMain.handle('fs:readText', (_e, p) => fs.readFileSync(p, 'utf8'));
+// This test builds its own srcdoc with the full engine; the no-op keeps reader.js's
+// auto-open (of any stale last book) from erroring on the new subset channel.
+ipcMain.handle('lexicon:subset', () => []);
 ipcMain.handle('engine:source', () =>
   fs.readFileSync(path.join(__dirname, '..', 'dist', 'eupub-engine.js'), 'utf8')
 );

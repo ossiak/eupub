@@ -13,6 +13,9 @@ contextBridge.exposeInMainWorld('eupub', {
   engineSource: () => ipcRenderer.invoke('engine:source'),
   readText: (filePath) => ipcRenderer.invoke('fs:readText', filePath),
 
+  // Per-chapter lexicon subset (array of [word, entry]) for the given words.
+  lexiconSubset: (words) => ipcRenderer.invoke('lexicon:subset', words),
+
   // Open a book's web/mail/tel link in the system handler (allowlisted in main).
   openExternal: (href) => ipcRenderer.invoke('shell:openExternal', href),
 

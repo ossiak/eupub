@@ -78,6 +78,11 @@
     // rendering, re-renders (font/theme), the progress pass, and the search
     // index — read each chapter from disk once per book session.
     htmlCache: new Map(),
+    // Per-chapter lexicon subset (absPath -> Promise<[key,entry][]>): the words a
+    // chapter uses, fetched once from the on-disk SQLite lexicon. Injected into
+    // the chapter iframe (with the lexicon-excluded engine) and used reader-side
+    // for the search index — so the full ~14 MB table is never resident.
+    subsetCache: new Map(),
     find: null, // clicked search hit currently highlighted { index, path, wordStart, wordEnd }
     // Per-chapter search index: absPath -> [{ path, origText, refText }]. Built
     // lazily on first search and cached for the book session.
@@ -231,6 +236,7 @@
     state.totalChars = 0;
     state.searchIndex = new Map();
     state.htmlCache = new Map();
+    state.subsetCache = new Map();
     els.searchInput.value = '';
     els.progress.textContent = '';
 
@@ -334,13 +340,27 @@
           : null,
     };
 
-    els.iframe.srcdoc = buildSrcdoc(html, baseHref, cfg);
+    // When reforming, fetch this chapter's lexicon subset so the iframe's
+    // (lexicon-excluded) engine can setLexicon it before converting. null when
+    // euspell is off — no engine is injected.
+    let subset = null;
+    if (prefs.euspell && state.engineSource) {
+      try {
+        subset = await chapterSubset(item.absPath);
+      } catch (err) {
+        console.error(err);
+        setStatus('left', 'Lexicon unavailable — showing original spelling.');
+      }
+      if (token !== state.renderToken) return; // superseded during the fetch
+    }
+
+    els.iframe.srcdoc = buildSrcdoc(html, baseHref, cfg, subset);
     els.welcome.classList.add('hidden');
     els.iframe.classList.remove('hidden');
     hideSelectionPopup();
   }
 
-  function buildSrcdoc(html, baseHref, cfg) {
+  function buildSrcdoc(html, baseHref, cfg, subset) {
     const doc = new DOMParser().parseFromString(html, 'text/html');
 
     for (const m of doc.querySelectorAll('meta[http-equiv]')) {
@@ -363,14 +383,25 @@
     head.appendChild(style);
 
     // euspell engine first (converts the text), then the viewer runtime, which
-    // lays out / paginates the converted DOM and restores position & marks.
-    if (prefs.euspell && state.engineSource) {
+    // lays out / paginates the converted DOM and restores position & marks. The
+    // engine is the lexicon-excluded build, so we (1) suppress its auto-run,
+    // (2) install this chapter's subset via setLexicon, then (3) convert — all
+    // before the runtime measures pagination on the reformed text.
+    if (prefs.euspell && state.engineSource && subset) {
+      const noAuto = doc.createElement('script');
+      noAuto.textContent = 'window.__eupubNoAuto=true;';
+      doc.body.appendChild(noAuto);
       const engine = doc.createElement('script');
       engine.textContent = state.engineSource;
       doc.body.appendChild(engine);
     }
     const boot = doc.createElement('script');
-    boot.textContent = `window.__eupubConfig=${jsonForScript(cfg)};(${state.runtimeSource})();`;
+    const reform =
+      prefs.euspell && state.engineSource && subset
+        ? `window.EupubEngine.setLexicon(new Map(${jsonForScript(subset)}));` +
+          `window.EupubEngine.walkTextNodes(document.body, window.EupubEngine.convert);`
+        : '';
+    boot.textContent = `${reform}window.__eupubConfig=${jsonForScript(cfg)};(${state.runtimeSource})();`;
     doc.body.appendChild(boot);
 
     return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
@@ -732,6 +763,10 @@
       let refBody = null;
       if (window.EupubEngine) {
         try {
+          // Install this chapter's subset so the (lexicon-excluded) reader engine
+          // reforms the same way the chapter iframe will.
+          const subsetArr = await chapterSubset(absPath);
+          window.EupubEngine.setLexicon(new Map(subsetArr));
           refBody = document.importNode(doc.body, true); // reader-owned copy
           window.EupubEngine.walkTextNodes(refBody, window.EupubEngine.convert);
         } catch (e) {
@@ -769,6 +804,47 @@
       cache.set(absPath, p);
     }
     return p;
+  }
+
+  // A chapter's lexicon subset — the entries for exactly the words it uses,
+  // fetched once from the SQLite lexicon and cached per book session. Returns an
+  // array of [key, entry], ready for `new Map(...)`.
+  function chapterSubset(absPath) {
+    let p = state.subsetCache.get(absPath);
+    if (!p) {
+      const cache = state.subsetCache;
+      p = buildChapterSubset(absPath);
+      p.catch(() => { if (cache.get(absPath) === p) cache.delete(absPath); });
+      cache.set(absPath, p);
+    }
+    return p;
+  }
+  async function buildChapterSubset(absPath) {
+    const html = await readChapterHtml(absPath);
+    ensureEngine();
+    return window.eupub.lexiconSubset([...chapterVocab(html)]);
+  }
+
+  // The set of lowercase words a chapter looks up, collected via the engine's OWN
+  // block grouping + tokenization: walkTextNodes with a recording function that
+  // returns each word unchanged. Using the real walker (not a regex over
+  // textContent) means words split across inline elements, or adjacent across
+  // block boundaries, are grouped exactly as they are at conversion time — so the
+  // subset can't miss a word and diverge from the full-lexicon result. Requires
+  // ensureEngine() to have run.
+  function chapterVocab(html) {
+    const words = new Set();
+    if (!window.EupubEngine) return words;
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    sanitizeChapterDoc(doc);
+    if (!doc.body) return words;
+    try {
+      const clone = document.importNode(doc.body, true); // reader-owned copy
+      window.EupubEngine.walkTextNodes(clone, (w) => { words.add(w.toLowerCase()); return w; });
+    } catch (e) {
+      console.error(e);
+    }
+    return words;
   }
 
   let searchToken = 0; // invalidates in-flight searches (new query or new book)

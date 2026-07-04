@@ -10,10 +10,22 @@ const { makeEpub } = require('./make-epub');
 app.disableHardwareAcceleration();
 setTimeout(() => { console.log('FAIL — timed out (30s)'); app.exit(3); }, 30000);
 
+// Mirror main.js: the reader now uses the lexicon-excluded engine plus a
+// per-chapter subset sliced from the full lexicon Map held in the main process.
+const { pathToFileURL } = require('node:url');
+let lexP = null;
+const getLex = () => (lexP ||= import(pathToFileURL(path.join(__dirname, '..', 'dist', 'lexicon.mjs')).href).then((m) => m.data));
+
 ipcMain.handle('epub:pick', () => null);
 ipcMain.handle('epub:openPath', (_e, p) => openEpub(p));
 ipcMain.handle('fs:readText', (_e, p) => fs.readFileSync(p, 'utf8'));
-ipcMain.handle('engine:source', () => fs.readFileSync(path.join(__dirname, '..', 'dist', 'eupub-engine.js'), 'utf8'));
+ipcMain.handle('engine:source', () => fs.readFileSync(path.join(__dirname, '..', 'dist', 'eupub-engine.mobile.js'), 'utf8'));
+ipcMain.handle('lexicon:subset', async (_e, words) => {
+  const lex = await getLex();
+  const out = [];
+  for (const w of words || []) { const e = lex.get(String(w)); if (e) out.push([w, e]); }
+  return out;
+});
 
 app.whenReady().then(async () => {
   const epubPath = makeEpub();

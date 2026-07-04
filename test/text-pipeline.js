@@ -12,6 +12,7 @@ app.disableHardwareAcceleration();
 
 ipcMain.handle('epub:openPath', (_e, p) => openText(p));
 ipcMain.handle('fs:readText', (_e, p) => fs.readFileSync(p, 'utf8'));
+ipcMain.handle('lexicon:subset', () => []); // no-op: this test uses its own full-engine srcdoc
 ipcMain.handle('engine:source', () =>
   fs.readFileSync(path.join(__dirname, '..', 'dist', 'eupub-engine.js'), 'utf8')
 );

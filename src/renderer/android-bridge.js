@@ -111,6 +111,7 @@
     openPath: function (p) { return nativeCall('openPath', [p]).then(rememberRoot); },
     engineSource: function () { return fetchText(ENGINE_URL); },
     readText: function (p) { return fetchText(fileURL(p)); },
+    lexiconSubset: function (words) { return nativeCall('lexiconSubset', [words]); },
     openExternal: function (href) { return nativeCall('openExternal', [href]); },
     join: function () { return joinParts([].slice.call(arguments)); },
     dirname: dirname,

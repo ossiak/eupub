@@ -87,13 +87,42 @@ ipcMain.handle('epub:openPath', (_e, filePath) => {
   return openBook(filePath);
 });
 
-// Source of the bundled euspell engine, injected into each chapter iframe.
+// Source of the bundled euspell engine, injected into each chapter iframe. This
+// is the LEXICON-EXCLUDED build (~0.36 MB): the reader supplies each chapter's
+// vocabulary subset via setLexicon (see the lexicon:subset handler), so the full
+// ~14 MB table is no longer baked into every iframe.
 ipcMain.handle('engine:source', () => {
-  const p = path.join(__dirname, '..', 'dist', 'eupub-engine.js');
+  const p = path.join(__dirname, '..', 'dist', 'eupub-engine.mobile.js');
   if (!fs.existsSync(p)) {
-    throw new Error('dist/eupub-engine.js is missing — run "npm run build:engine".');
+    throw new Error('dist/eupub-engine.mobile.js is missing — run "npm run build:engine:mobile".');
   }
   return fs.readFileSync(p, 'utf8');
+});
+
+// Per-chapter lexicon subset: given the words a chapter actually uses, return
+// just those entries. The full ~205k-entry Map lives here in the main process
+// (loaded once), so no chapter iframe carries it — the reader injects only each
+// chapter's slice. (Android, where main-process RAM is scarce, instead queries
+// dist/lexicon.db via native SQLite; Electron's bundled Node has no node:sqlite,
+// and the desktop can afford the resident Map.)
+let lexiconMap = null;
+async function getLexicon() {
+  if (!lexiconMap) {
+    const p = path.join(__dirname, '..', 'dist', 'lexicon.mjs');
+    if (!fs.existsSync(p)) throw new Error('dist/lexicon.mjs is missing — run "npm run build:lexicon".');
+    const url = require('node:url').pathToFileURL(p).href;
+    lexiconMap = (await import(url)).data;
+  }
+  return lexiconMap;
+}
+ipcMain.handle('lexicon:subset', async (_e, words) => {
+  const lex = await getLexicon();
+  const out = [];
+  for (const w of words || []) {
+    const entry = lex.get(String(w));
+    if (entry) out.push([w, entry]); // { pos, encoding, spellings }, ready for new Map(...)
+  }
+  return out;
 });
 
 // Read a UTF-8 text file (chapter XHTML) from the extracted book. Restricted to
