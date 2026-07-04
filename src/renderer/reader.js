@@ -71,6 +71,13 @@
     highlights: [],
     selection: null,
     search: { query: '', results: [] },
+    // Monotonic render id: a chapter render that finishes its async read after a
+    // newer render started must not touch the iframe (fast TOC clicks race).
+    renderToken: 0,
+    // Chapter HTML cache (absPath -> Promise<string>): the same file is read by
+    // rendering, re-renders (font/theme), the progress pass, and the search
+    // index — read each chapter from disk once per book session.
+    htmlCache: new Map(),
     find: null, // clicked search hit currently highlighted { index, path, wordStart, wordEnd }
     // Per-chapter search index: absPath -> [{ path, origText, refText }]. Built
     // lazily on first search and cached for the book session.
@@ -113,9 +120,15 @@
     const recents = loadRecents();
     const last = (recents[0] && recents[0].path) || localStorage.getItem(LAST_KEY);
     if (last) {
-      const book = await window.eupub.openPath(last);
-      if (book) await loadBook(book);
-      else pruneRecent(last); // file moved/deleted since last session
+      try {
+        const book = await window.eupub.openPath(last);
+        if (book) await loadBook(book);
+        else pruneRecent(last); // file moved/deleted since last session
+      } catch (err) {
+        console.error(err);
+        pruneRecent(last);
+        setStatus('left', 'The last book could not be reopened — removed from recent.');
+      }
     }
   }
 
@@ -179,14 +192,24 @@
   // --- opening / loading ----------------------------------------------
 
   async function openBook() {
-    const book = await window.eupub.pickEpub();
-    if (book) await loadBook(book); // loadBook records it in the recent list
+    try {
+      const book = await window.eupub.pickEpub();
+      if (book) await loadBook(book); // loadBook records it in the recent list
+    } catch (err) {
+      console.error(err);
+      setStatus('left', 'That file could not be opened — it may be corrupt.');
+    }
   }
 
   // Open a book chosen from the recent list. If it can no longer be opened
-  // (moved or deleted), drop it from the list and say so.
+  // (moved, deleted, or corrupt), drop it from the list and say so.
   async function openRecent(filePath) {
-    const book = await window.eupub.openPath(filePath);
+    let book = null;
+    try {
+      book = await window.eupub.openPath(filePath);
+    } catch (err) {
+      console.error(err);
+    }
     if (!book) {
       pruneRecent(filePath);
       setStatus('left', 'That book could not be opened — removed from recent.');
@@ -207,6 +230,7 @@
     state.cumChars = null;
     state.totalChars = 0;
     state.searchIndex = new Map();
+    state.htmlCache = new Map();
     els.searchInput.value = '';
     els.progress.textContent = '';
 
@@ -236,7 +260,7 @@
     for (let i = 0; i < spine.length; i++) {
       if (state.book !== book) return;
       try {
-        const html = await window.eupub.readText(spine[i].absPath);
+        const html = await readChapterHtml(spine[i].absPath);
         const doc = new DOMParser().parseFromString(html, 'text/html');
         for (const s of doc.querySelectorAll('script,style')) s.remove();
         counts[i] = ((doc.body && doc.body.textContent) || '').replace(/\s+/g, ' ').trim().length;
@@ -278,12 +302,22 @@
   }
 
   async function renderChapter(index, opts) {
+    const token = ++state.renderToken;
     const item = state.model.spine[index];
-    const html = await window.eupub.readText(item.absPath);
+    let html;
+    try {
+      html = await readChapterHtml(item.absPath);
+    } catch (err) {
+      console.error(err);
+      setStatus('left', 'This chapter could not be read.');
+      return;
+    }
+    // A newer render (fast TOC clicks, or a new book) started while the read was
+    // in flight — that one owns the iframe now.
+    if (token !== state.renderToken) return;
     const baseHref = withTrailingSlash(window.eupub.fileURL(window.eupub.dirname(item.absPath)));
 
     const cfg = {
-      mode: 'paginated',
       fragment: opts.fragment || '',
       restore: opts.restore || null,
       startAtEnd: !!opts.startAtEnd,
@@ -312,7 +346,7 @@
     for (const m of doc.querySelectorAll('meta[http-equiv]')) {
       if (/content-security-policy/i.test(m.getAttribute('http-equiv') || '')) m.remove();
     }
-    for (const s of doc.querySelectorAll('script')) s.remove();
+    sanitizeChapterDoc(doc);
 
     let head = doc.head;
     if (!head) {
@@ -336,10 +370,40 @@
       doc.body.appendChild(engine);
     }
     const boot = doc.createElement('script');
-    boot.textContent = `window.__eupubConfig=${JSON.stringify(cfg)};(${state.runtimeSource})();`;
+    boot.textContent = `window.__eupubConfig=${jsonForScript(cfg)};(${state.runtimeSource})();`;
     doc.body.appendChild(boot);
 
     return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+  }
+
+  // JSON safe to embed in a <script> that will be re-serialized into srcdoc:
+  // "<" is escaped so a book-controlled string (e.g. a TOC fragment) containing
+  // "</script>" can't close the boot script and inject markup of its own.
+  function jsonForScript(value) {
+    return JSON.stringify(value).replace(/</g, '\\u003c');
+  }
+
+  // Strip anything executable from an untrusted chapter document. The srcdoc
+  // iframe runs with allow-same-origin + allow-scripts (our engine/runtime must
+  // run there), so any book code that executed could reach this window and its
+  // eupub bridge. Removing <script> alone is not enough: inline event handlers
+  // (onerror=…) and javascript: URLs run under the inherited 'unsafe-inline'
+  // CSP, and nested browsing contexts carry their own unscanned markup.
+  function sanitizeChapterDoc(doc) {
+    for (const el of doc.querySelectorAll('script, iframe, frame, object, embed')) el.remove();
+    for (const el of doc.querySelectorAll('*')) {
+      for (const attr of [...el.attributes]) {
+        const name = attr.name.toLowerCase();
+        if (name.startsWith('on')) {
+          el.removeAttribute(attr.name);
+        } else if (
+          (name === 'href' || name === 'src' || name === 'action' || name === 'formaction' || name === 'xlink:href') &&
+          /^javascript:/i.test(attr.value.replace(/[\s\u0000-\u001f]/g, ''))
+        ) {
+          el.removeAttribute(attr.name);
+        }
+      }
+    }
   }
 
   function readerStyle() {
@@ -383,6 +447,8 @@
   // --- messages from the chapter --------------------------------------
 
   function onChapterMessage(e) {
+    // Only the current chapter iframe may drive the reader.
+    if (e.source !== els.iframe.contentWindow) return;
     const m = e.data || {};
     switch (m.type) {
       case 'eupub:ready':
@@ -406,6 +472,16 @@
       }
       case 'eupub:key':
         handleEdgeTurn(m.key);
+        break;
+      case 'eupub:external':
+        // Web/mail/tel links open in the system handler (scheme re-checked in
+        // the main process), never inside the reader.
+        window.eupub.openExternal(String(m.href || ''));
+        break;
+      case 'eupub:toggleChrome':
+        // Center-tap (touch) immersive toggle: hide/show the toolbar + status
+        // bar for distraction-free reading. Only ever sent from touch input.
+        document.body.classList.toggle('immersive');
         break;
       case 'eupub:selection':
         state.selection = m;
@@ -640,9 +716,17 @@
     let blocks = state.searchIndex.get(absPath);
     if (blocks) return blocks;
 
-    const html = await window.eupub.readText(absPath);
+    let html = '';
+    try {
+      html = await readChapterHtml(absPath);
+    } catch {
+      /* unreadable chapter — index it as empty */
+    }
     const doc = new DOMParser().parseFromString(html, 'text/html');
-    for (const s of doc.querySelectorAll('script')) s.remove();
+    // Full sanitize, not just script removal: importNode below adopts these
+    // elements into THIS document, where a surviving onerror handler on an <img>
+    // could fire in the reader's own realm.
+    sanitizeChapterDoc(doc);
     blocks = [];
     if (doc.body) {
       let refBody = null;
@@ -671,7 +755,27 @@
     return blocks;
   }
 
+  // Read a chapter's HTML once per book session (see state.htmlCache). Caches
+  // the promise so concurrent callers share one read; a failed read is evicted
+  // so it can be retried.
+  function readChapterHtml(absPath) {
+    let p = state.htmlCache.get(absPath);
+    if (!p) {
+      const cache = state.htmlCache;
+      p = window.eupub.readText(absPath);
+      p.catch(() => {
+        if (cache.get(absPath) === p) cache.delete(absPath);
+      });
+      cache.set(absPath, p);
+    }
+    return p;
+  }
+
+  let searchToken = 0; // invalidates in-flight searches (new query or new book)
+
   async function runSearch(query) {
+    const token = ++searchToken;
+    const book = state.book;
     state.search.query = query;
     state.search.results = [];
     if (!query || query.length < 2) {
@@ -687,6 +791,9 @@
 
     for (let i = 0; i < state.model.spine.length && results.length < 400; i++) {
       const blocks = await getChapterIndex(i);
+      // Superseded by a newer search, or the book changed while we were reading
+      // — this run's results (and its loop bounds) no longer apply.
+      if (token !== searchToken || state.book !== book) return;
       for (const b of blocks) {
         // Collect word spans that match the query in EITHER spelling, deduped by
         // word position (an unchanged word matches both at the same index).
@@ -758,8 +865,15 @@
 
   function showSelectionPopup(rect) {
     if (!rect) return;
-    els.popup.style.left = `${rect.x + rect.w / 2}px`;
-    els.popup.style.top = `${rect.y}px`;
+    // Keep the popup inside the reader area: clamp horizontally, and flip below
+    // the selection when it starts too close to the top to fit above (the
+    // reader clips overflow).
+    const halfW = 50;
+    const x = Math.max(halfW, Math.min(rect.x + rect.w / 2, els.iframe.clientWidth - halfW));
+    const flip = rect.y < 44;
+    els.popup.style.left = `${x}px`;
+    els.popup.style.top = flip ? `${rect.y + rect.h + 8}px` : `${rect.y}px`;
+    els.popup.style.transform = flip ? 'translate(-50%, 0)' : 'translate(-50%, -120%)';
     els.popup.classList.remove('hidden');
   }
   function hideSelectionPopup() {
@@ -856,7 +970,7 @@
 
     const pick = document.createElement('button');
     pick.className = 'menu-item';
-    pick.textContent = 'Open EPUB…';
+    pick.textContent = 'Open a book…';
     pick.addEventListener('click', () => {
       closeOpenMenu();
       openBook();

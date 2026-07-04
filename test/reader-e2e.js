@@ -247,7 +247,7 @@ app.whenReady().then(async () => {
     ['recent-stored', recentMenu.storedLen >= 1, 'recent=' + recentMenu.storedLen],
     [
       'recent-menu-opens',
-      recentMenu.opened && recentMenu.first === 'Open EPUB…' && recentMenu.recentCount >= 1,
+      recentMenu.opened && recentMenu.first === 'Open a book…' && recentMenu.recentCount >= 1,
       'opened=' + recentMenu.opened + ' first="' + recentMenu.first + '" recents=' + recentMenu.recentCount + ' label="' + recentMenu.firstLabel + '"',
     ],
     ['recent-menu-closes', recentMenu.closed, 'closed=' + recentMenu.closed],

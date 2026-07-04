@@ -13,6 +13,9 @@ contextBridge.exposeInMainWorld('eupub', {
   engineSource: () => ipcRenderer.invoke('engine:source'),
   readText: (filePath) => ipcRenderer.invoke('fs:readText', filePath),
 
+  // Open a book's web/mail/tel link in the system handler (allowlisted in main).
+  openExternal: (href) => ipcRenderer.invoke('shell:openExternal', href),
+
   // Path helpers (sync, pure) so the renderer can resolve manifest hrefs and
   // build the file:// base URLs that chapter resources load against.
   join: (...parts) => path.join(...parts),

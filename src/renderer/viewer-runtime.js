@@ -10,8 +10,6 @@ window.EupubViewerRuntime = function () {
   'use strict';
 
   var cfg = window.__eupubConfig || {};
-  var mode = cfg.mode === 'paginated' ? 'paginated' : 'scroll';
-  var paginated = mode === 'paginated';
 
   var currentPage = 0;
   var pageCount = 1;
@@ -126,15 +124,10 @@ window.EupubViewerRuntime = function () {
   // --- pagination ---
 
   function measure() {
-    if (paginated) {
-      applyColumns();
-      pageCount = Math.max(1, Math.round(document.body.scrollWidth / pageW()));
-    } else {
-      pageCount = 1;
-    }
+    applyColumns();
+    pageCount = Math.max(1, Math.round(document.body.scrollWidth / pageW()));
   }
   function applyTransform(animate) {
-    if (!paginated) return;
     // !important so a book's own body transform can't override the page offset.
     document.body.style.setProperty('transition', animate ? 'transform .18s ease' : 'none', 'important');
     document.body.style.setProperty('transform', 'translateX(' + (-currentPage * pageW()) + 'px)', 'important');
@@ -145,11 +138,11 @@ window.EupubViewerRuntime = function () {
     emitPosition();
   }
   function nextPage() {
-    if (paginated && currentPage < pageCount - 1) { goToPage(currentPage + 1, true); return true; }
+    if (currentPage < pageCount - 1) { goToPage(currentPage + 1, true); return true; }
     return false;
   }
   function prevPage() {
-    if (paginated && currentPage > 0) { goToPage(currentPage - 1, true); return true; }
+    if (currentPage > 0) { goToPage(currentPage - 1, true); return true; }
     return false;
   }
 
@@ -171,25 +164,22 @@ window.EupubViewerRuntime = function () {
     return Math.max(0, Math.floor((contentLeft(el) + 2) / pageW()));
   }
 
-  // The block anchoring the current view: in paginated mode the first block that
-  // begins on the current page; in scroll mode the first block at/under the top.
+  // The block anchoring the current view: the first block that begins on the
+  // current page.
   function currentLocator() {
     var blocks = document.body.querySelectorAll(BLOCK);
     var anchor = null, firstAfter = null;
     for (var i = 0; i < blocks.length; i++) {
-      if (paginated) {
-        var pg = pageOf(blocks[i]);
-        if (pg === currentPage) { anchor = blocks[i]; break; }
-        if (pg > currentPage && !firstAfter) firstAfter = blocks[i];
-      } else if (blocks[i].getBoundingClientRect().bottom > 4) { anchor = blocks[i]; break; }
+      var pg = pageOf(blocks[i]);
+      if (pg === currentPage) { anchor = blocks[i]; break; }
+      if (pg > currentPage && !firstAfter) firstAfter = blocks[i];
     }
     if (!anchor) anchor = firstAfter || document.body.firstElementChild;
     return anchor ? { path: elPath(anchor) } : { path: [] };
   }
   function gotoEl(el, animate) {
     if (!el) return;
-    if (paginated) goToPage(pageOf(el), animate);
-    else { el.scrollIntoView(); emitPosition(); }
+    goToPage(pageOf(el), animate);
   }
   function gotoLocator(loc, animate) {
     if (loc && loc.path) { lastLocator = loc; gotoEl(elResolve(loc.path), animate); }
@@ -384,28 +374,63 @@ window.EupubViewerRuntime = function () {
 
   document.addEventListener('keydown', function (e) {
     if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
-      if (paginated) { e.preventDefault(); if (!nextPage()) post('eupub:key', { key: 'ArrowRight' }); }
-      else if (e.key !== ' ') post('eupub:key', { key: 'ArrowRight' });
+      e.preventDefault();
+      if (!nextPage()) post('eupub:key', { key: 'ArrowRight' });
     } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
-      if (paginated) { e.preventDefault(); if (!prevPage()) post('eupub:key', { key: 'ArrowLeft' }); }
-      else post('eupub:key', { key: 'ArrowLeft' });
+      e.preventDefault();
+      if (!prevPage()) post('eupub:key', { key: 'ArrowLeft' });
     }
   });
 
-  if (paginated) {
-    var wheelLock = 0;
-    document.addEventListener('wheel', function (e) {
-      var now = Date.now();
-      if (now < wheelLock) return;
-      var d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-      if (Math.abs(d) < 8) return;
-      wheelLock = now + 250;
-      if (d > 0) { if (!nextPage()) post('eupub:key', { key: 'ArrowRight' }); }
+  var wheelLock = 0;
+  document.addEventListener('wheel', function (e) {
+    var now = Date.now();
+    if (now < wheelLock) return;
+    var d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    if (Math.abs(d) < 8) return;
+    wheelLock = now + 250;
+    if (d > 0) { if (!nextPage()) post('eupub:key', { key: 'ArrowRight' }); }
+    else { if (!prevPage()) post('eupub:key', { key: 'ArrowLeft' }); }
+  }, { passive: true });
+
+  // Touch: a quick horizontal swipe turns the page; a tap in the left/right
+  // third pages back/forward, and a center tap toggles the reader chrome. Both
+  // reuse the same next/prev + edge-turn path as wheel/keys. Deferred to native
+  // behavior when the gesture is a text selection (long-press) or lands on a
+  // link, so highlighting and link-following still work.
+  var SWIPE_MIN = 40; // px of horizontal travel that counts as a page swipe
+  var TAP_MAX = 10;   // px of travel under which a touch is a tap, not a drag
+  var TAP_MS = 250;   // ms under which a stationary touch is a tap
+  var tsx = 0, tsy = 0, tst = 0, touchTracking = false;
+  document.addEventListener('touchstart', function (e) {
+    // Single-finger only — leave pinch-zoom and multi-touch alone.
+    touchTracking = e.touches.length === 1;
+    if (!touchTracking) return;
+    var t = e.changedTouches[0];
+    tsx = t.clientX; tsy = t.clientY; tst = Date.now();
+  }, { passive: true });
+  document.addEventListener('touchend', function (e) {
+    if (!touchTracking) return;
+    touchTracking = false;
+    // An active selection means the user was selecting text, not paging.
+    var sel = document.getSelection();
+    if (sel && !sel.isCollapsed) return;
+    var t = e.changedTouches[0];
+    var dx = t.clientX - tsx, dy = t.clientY - tsy;
+    if (Math.abs(dx) > SWIPE_MIN && Math.abs(dx) > Math.abs(dy)) {
+      if (dx < 0) { if (!nextPage()) post('eupub:key', { key: 'ArrowRight' }); }
       else { if (!prevPage()) post('eupub:key', { key: 'ArrowLeft' }); }
-    }, { passive: true });
-  } else {
-    document.addEventListener('scroll', debounce(emitPosition, 150), { passive: true });
-  }
+      return;
+    }
+    // A tap: ignore taps on links (the click handler routes those).
+    if (Math.abs(dx) < TAP_MAX && Math.abs(dy) < TAP_MAX && Date.now() - tst < TAP_MS) {
+      if (e.target.closest && e.target.closest('a[href]')) return;
+      var third = document.documentElement.clientWidth / 3;
+      if (tsx < third) { if (!prevPage()) post('eupub:key', { key: 'ArrowLeft' }); }
+      else if (tsx > 2 * third) { if (!nextPage()) post('eupub:key', { key: 'ArrowRight' }); }
+      else post('eupub:toggleChrome');
+    }
+  }, { passive: true });
   document.addEventListener('selectionchange', debounce(onSelectionChange, 120));
 
   window.addEventListener('message', function (e) {
@@ -453,15 +478,21 @@ window.EupubViewerRuntime = function () {
       var hit = applyFind(cfg.find);
       if (hit) gotoEl(hit, false); // scroll to the highlighted word (overrides restore)
     }
-    post('eupub:ready', { page: currentPage, pages: pageCount, mode: mode, locator: currentLocator() });
+    post('eupub:ready', { page: currentPage, pages: pageCount, locator: currentLocator() });
   }
-  // Images affect layout/page count, so settle on full load (with a DOM-ready
-  // first pass so a slow image can't delay interactivity indefinitely).
+  // Images affect layout/page count, so settle on full load — with a DOM-ready
+  // first pass so a slow image can't delay interactivity indefinitely. When the
+  // first pass ran before `load`, late-loading images have changed the layout:
+  // re-measure and re-settle on the locator the reader is at.
   if (document.readyState === 'complete') init();
   else {
-    var done = false;
-    var once = function () { if (done) return; done = true; init(); };
-    window.addEventListener('load', once);
+    var inited = false;
+    var once = function () { if (inited) return; inited = true; init(); };
+    window.addEventListener('load', function () {
+      if (!inited) { once(); return; }
+      measure();
+      if (lastLocator) gotoLocator(lastLocator, false);
+    });
     document.addEventListener('DOMContentLoaded', function () { setTimeout(once, 400); });
   }
 };

@@ -26,6 +26,10 @@ body {
   height: 100vh;
 }
 
+/* Immersive reading (center-tap on touch): collapse chrome to the page only. */
+body.immersive #toolbar,
+body.immersive #statusbar { display: none; }
+
 /* Toolbar -------------------------------------------------------------- */
 #toolbar {
   display: flex;

@@ -165,6 +165,67 @@ app.whenReady().then(async () => {
     }
     log.push(['highlight', hlOk, selMsg ? 'sel="' + selMsg.text.trim() + '"' : 'no-selection']);
 
+    // --- touch paging: swipe + tap-zones, and deferral to text selection ---
+    // The highlight step left a selection active; clear it so touches page.
+    window.getSelection().removeAllRanges();
+    await sleep(50);
+
+    function fireTouch(type, x, y) {
+      const tt = new Touch({ identifier: 1, target: document.body, clientX: x, clientY: y });
+      const ev = new TouchEvent(type, {
+        touches: type === 'touchend' ? [] : [tt],
+        changedTouches: [tt],
+        bubbles: true,
+        cancelable: true,
+      });
+      document.body.dispatchEvent(ev);
+    }
+    const swipe = (fromX, toX) => { fireTouch('touchstart', fromX, 300); fireTouch('touchend', toX, 300); };
+    const tap = (x) => { fireTouch('touchstart', x, 300); fireTouch('touchend', x, 300); };
+    const W = document.documentElement.clientWidth;
+
+    // Start from page 0.
+    inbox.length = 0; send({ type: 'eupub:setPage', page: 0 }); await waitFor('eupub:position', 2000);
+
+    // Swipe left (finger moves right→left) pages forward.
+    inbox.length = 0; swipe(W * 0.7, W * 0.7 - 120);
+    const afterSwipeFwd = await waitFor('eupub:position', 2000);
+    const swipeFwdPage = afterSwipeFwd ? afterSwipeFwd.page : -1;
+    log.push(['touch-swipe-forward', swipeFwdPage === 1, 'page=' + swipeFwdPage]);
+
+    // Swipe right pages back.
+    inbox.length = 0; swipe(W * 0.3, W * 0.3 + 120);
+    const afterSwipeBack = await waitFor('eupub:position', 2000);
+    log.push(['touch-swipe-back', afterSwipeBack && afterSwipeBack.page === 0, 'page=' + (afterSwipeBack && afterSwipeBack.page)]);
+
+    // Tap the right third pages forward.
+    inbox.length = 0; tap(W * 0.9);
+    const afterTapRight = await waitFor('eupub:position', 2000);
+    log.push(['touch-tap-right', afterTapRight && afterTapRight.page === 1, 'page=' + (afterTapRight && afterTapRight.page)]);
+
+    // Tap the left third pages back.
+    inbox.length = 0; tap(W * 0.1);
+    const afterTapLeft = await waitFor('eupub:position', 2000);
+    log.push(['touch-tap-left', afterTapLeft && afterTapLeft.page === 0, 'page=' + (afterTapLeft && afterTapLeft.page)]);
+
+    // Center tap toggles the reader chrome (no paging).
+    inbox.length = 0; tap(W * 0.5);
+    const chrome = await waitFor('eupub:toggleChrome', 1500);
+    log.push(['touch-center-toggle', !!chrome, chrome ? 'posted' : 'no-message']);
+
+    // A swipe while text is selected must NOT page (selection wins).
+    inbox.length = 0; send({ type: 'eupub:setPage', page: 1 }); await waitFor('eupub:position', 2000);
+    const selRange = document.createRange();
+    selRange.selectNodeContents(document.getElementById('p2'));
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(selRange);
+    await sleep(50);
+    inbox.length = 0; swipe(W * 0.7, W * 0.7 - 120);
+    await sleep(250);
+    const pagedDuringSelection = inbox.some((m) => m.type === 'eupub:position');
+    log.push(['touch-defers-to-selection', !pagedDuringSelection, pagedDuringSelection ? 'PAGED (bad)' : 'held']);
+    window.getSelection().removeAllRanges();
+
     const passed = pages > 1 && log.every((r) => r[1] === true);
     return { passed, pages, log };
   })()`;

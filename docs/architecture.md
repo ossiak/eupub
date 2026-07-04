@@ -164,15 +164,27 @@ animation.
 
 ## Security model
 
-- **Chapter scripts are stripped** in `reader.js` before injection, so no EPUB
-  JavaScript runs.
+- **Chapter content is sanitized** in `reader.js` (`sanitizeChapterDoc`) before
+  injection: `<script>` elements, nested browsing contexts (`iframe`/`object`/
+  `embed`), inline `on*` event handlers, and `javascript:` URLs are all removed —
+  the srcdoc iframe is same-origin with the top frame (it needs
+  `allow-same-origin` + `allow-scripts` for the engine/runtime), so nothing from
+  the book may execute there. The same sanitizer runs before the search index
+  imports chapter nodes into the reader document.
+- **Injected config is `<`-escaped** (`jsonForScript`) so a book-controlled string
+  (e.g. a TOC fragment) containing `</script>` can't break out of the boot script
+  when the srcdoc is serialized.
 - **Untrusted markup is confined** to the sandboxed `srcdoc` iframe; the top frame
-  (with the preload's Node bridge) never hosts book content.
+  (with the preload's Node bridge) never hosts book content, and it only accepts
+  postMessages whose source is the current chapter iframe.
+- **IPC is least-privilege**: `fs:readText` refuses paths outside the open book's
+  extraction dir, and `shell:openExternal` allowlists `http(s):`/`mailto:`/`tel:`
+  in the main process.
 - **CSP is deliberately relaxed** to `'unsafe-inline'` scripts plus `file:`/`data:`
   resources, because the engine is injected as an inline `<script>` and a strict
   `script-src 'self'`/`frame-src 'self'` silently blocks both the inline engine and
   the `srcdoc` frame (which then never fires `load` → hang). The relaxation is
-  mitigated by the script-stripping + sandbox above.
+  mitigated by the sanitizing + sandbox above.
 
 ## Build & packaging
 

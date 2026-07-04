@@ -5,9 +5,10 @@
 // (b) the bundled euspell engine source to inject into chapter iframes, and
 // (c) a couple of filesystem helpers. All EPUB parsing and rendering happens in
 // the renderer, where DOMParser and a live DOM are available.
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
 const { openEpub: extractEpub } = require('./epub-extract');
 const { openText } = require('./text-open');
 
@@ -43,6 +44,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   createWindow();
+  sweepStaleTempDirs();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -94,13 +96,59 @@ ipcMain.handle('engine:source', () => {
   return fs.readFileSync(p, 'utf8');
 });
 
-// Read a UTF-8 text file (chapter XHTML) from the extracted book.
-ipcMain.handle('fs:readText', (_e, p) => fs.readFileSync(p, 'utf8'));
+// Read a UTF-8 text file (chapter XHTML) from the extracted book. Restricted to
+// the extraction dirs of currently open books, so a compromised renderer can't
+// use this channel to read arbitrary files.
+ipcMain.handle('fs:readText', (_e, p) => {
+  const resolved = path.resolve(String(p));
+  const inside = tempDirs.some((d) => resolved === d || resolved.startsWith(d + path.sep));
+  if (!inside) throw new Error('fs:readText outside the opened book: ' + resolved);
+  return fs.promises.readFile(resolved, 'utf8');
+});
+
+// Open a web/mail/tel link from a book in the system handler. Scheme-checked
+// here (not just in the renderer) so nothing else can be launched.
+ipcMain.handle('shell:openExternal', (_e, href) => {
+  if (typeof href === 'string' && /^(https?:|mailto:|tel:)/i.test(href.trim())) {
+    shell.openExternal(href.trim());
+  }
+});
 
 // Open a book by extension — extract an EPUB, or synthesize an EPUB-shaped book
-// from a .txt — and remember its temp dir so we can clean it up on quit.
+// from a .txt — and remember its temp dir so we can clean it up. Once the new
+// book has extracted, the previous books' dirs are unreachable from the UI, so
+// free them now instead of letting them pile up until quit.
 function openBook(filePath) {
   const book = /\.txt$/i.test(filePath) ? openText(filePath) : extractEpub(filePath);
+  while (tempDirs.length) {
+    try {
+      fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
+    } catch {
+      /* best effort */
+    }
+  }
   tempDirs.push(book.rootDir);
   return book;
+}
+
+// Extraction dirs left behind by crashed sessions. Only sweep dirs old enough
+// that no live Eupub instance is plausibly still reading from them.
+function sweepStaleTempDirs() {
+  const base = os.tmpdir();
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  let names;
+  try {
+    names = fs.readdirSync(base);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    if (!name.startsWith('eupub-')) continue;
+    const p = path.join(base, name);
+    try {
+      if (fs.statSync(p).mtimeMs < cutoff) fs.rmSync(p, { recursive: true, force: true });
+    } catch {
+      /* best effort */
+    }
+  }
 }

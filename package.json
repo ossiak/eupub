@@ -7,10 +7,11 @@
   "main": "src/main.js",
   "scripts": {
     "build:engine": "rollup -c rollup.engine.config.mjs",
+    "build:engine:mobile": "rollup -c rollup.engine.mobile.config.mjs",
     "build": "npm run build:engine",
     "start": "npm run build:engine && electron .",
     "dev": "electron .",
-    "test": "npm run build:engine && electron test/pipeline.js && electron test/text-pipeline.js && electron test/features.js && electron test/reader-e2e.js",
+    "test": "node --test test/android-bridge.test.js && npm run build:engine && electron test/pipeline.js && electron test/text-pipeline.js && electron test/features.js && electron test/reader-e2e.js",
     "test:smoke": "electron test/smoke.js",
     "icon": "node build/make-icon.js",
     "package": "npm run build:engine && node build/package.js",

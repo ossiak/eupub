@@ -84,10 +84,14 @@
       try {
         const html = await window.eupub.readText(navItem.absPath);
         const toc = buildNavToc(html, navItem.dir, book, model.spine);
-        if (toc && toc.length) model.toc = toc;
-        return model;
+        // Only a usable nav TOC ends the lookup — a nav that is missing,
+        // malformed (XHTML parse error), or empty still falls through to NCX.
+        if (toc && toc.length) {
+          model.toc = toc;
+          return model;
+        }
       } catch {
-        /* fall through to spine TOC */
+        /* fall through to ncx */
       }
     }
 
@@ -107,7 +111,7 @@
   function findNavItem(book) {
     const doc = xml.parseFromString(book.opfXml, 'application/xml');
     for (const item of doc.querySelectorAll('manifest > item')) {
-      if (/\bnav\b/.test(item.getAttribute('properties') || '')) {
+      if (/\bnav\b/.test(item.getAttribute('properties') || '') && item.getAttribute('href')) {
         const abs = resolve(book.opfDir, item.getAttribute('href'));
         return { absPath: abs, dir: window.eupub.dirname(abs) };
       }
@@ -121,7 +125,7 @@
     const item = tocId
       ? doc.querySelector(`manifest > item[id="${cssEscape(tocId)}"]`)
       : doc.querySelector('manifest > item[media-type="application/x-dtbncx+xml"]');
-    if (!item) return null;
+    if (!item || !item.getAttribute('href')) return null;
     const abs = resolve(book.opfDir, item.getAttribute('href'));
     return { absPath: abs, dir: window.eupub.dirname(abs) };
   }

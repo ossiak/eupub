@@ -15,12 +15,25 @@ function openEpub(filePath) {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eupub-'));
   zip.extractAllTo(rootDir, /* overwrite */ true);
 
-  // META-INF/container.xml names the OPF via a <rootfile full-path="...">.
+  // META-INF/container.xml names the OPF via a <rootfile full-path="...">
+  // (either quote style; the first rootfile is the default rendition).
   const containerXml = fs.readFileSync(path.join(rootDir, 'META-INF', 'container.xml'), 'utf8');
-  const match = containerXml.match(/full-path\s*=\s*"([^"]+)"/i);
-  if (!match) throw new Error('Invalid EPUB: no rootfile in META-INF/container.xml');
+  const match = containerXml.match(/<rootfile\b[^>]*\bfull-path\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
+  const rel = match && (match[1] || match[2]);
+  if (!rel) throw new Error('Invalid EPUB: no rootfile in META-INF/container.xml');
 
-  const opfPath = path.join(rootDir, match[1]);
+  // full-path is a URL, so it may be percent-encoded; it must also stay inside
+  // the extraction dir (a hostile "../…" would point the reader elsewhere).
+  let decoded = rel;
+  try {
+    decoded = decodeURIComponent(rel);
+  } catch {
+    /* not percent-encoded */
+  }
+  const opfPath = path.resolve(rootDir, decoded);
+  if (opfPath !== rootDir && !opfPath.startsWith(rootDir + path.sep)) {
+    throw new Error('Invalid EPUB: rootfile path escapes the archive');
+  }
   return {
     sourcePath: filePath,
     rootDir,
