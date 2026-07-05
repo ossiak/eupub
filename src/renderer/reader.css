@@ -31,7 +31,11 @@ body {
   height: 100vh;
 }
 
-/* Immersive reading (center-tap on touch): collapse chrome to the page only. */
+/* Immersive reading (center-tap on touch): collapse chrome to the page only.
+   Hiding the toolbar + status bar drops them as grid items, so re-declare a
+   single row — otherwise #layout auto-places into the old `auto` row and only
+   fills part of the screen. */
+body.immersive { grid-template-rows: 1fr; }
 body.immersive #toolbar,
 body.immersive #statusbar { display: none; }
 
