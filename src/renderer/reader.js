@@ -13,6 +13,9 @@
     open2: $('open-btn-2'),
     openWrap: $('open-wrap'),
     openMenu: $('open-menu'),
+    moreWrap: $('more-wrap'),
+    moreBtn: $('more-btn'),
+    moreMenu: $('more-menu'),
     sidebar: $('sidebar'),
     sidebarBtn: $('sidebar-btn'),
     prev: $('prev-btn'),
@@ -150,11 +153,30 @@
     });
     els.open2.addEventListener('click', openBook);
     els.openMenu.addEventListener('click', (e) => e.stopPropagation());
+
+    // Overflow ("More") menu: the phone-collapsed display controls. Each item
+    // reuses the same handler as its inline button.
+    els.moreBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleMoreMenu();
+    });
+    els.moreMenu.addEventListener('click', (e) => {
+      const item = e.target.closest('[data-action]');
+      if (!item) return;
+      closeMoreMenu();
+      const act = item.dataset.action;
+      if (act === 'bookmark') addBookmark();
+      else if (act === 'font-down') changeFont(-1);
+      else if (act === 'font-up') changeFont(1);
+      else if (act === 'theme') toggleTheme();
+    });
+
     document.addEventListener('click', (e) => {
       if (!els.openWrap.contains(e.target)) closeOpenMenu();
+      if (!els.moreWrap.contains(e.target)) closeMoreMenu();
     });
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeOpenMenu();
+      if (e.key === 'Escape') { closeOpenMenu(); closeMoreMenu(); }
     });
     els.sidebarBtn.addEventListener('click', () => els.sidebar.classList.toggle('hidden'));
     els.prev.addEventListener('click', navPrev);
@@ -996,7 +1018,7 @@
     reRenderKeepingPlace();
   }
   function enableControls(on) {
-    for (const b of [els.sidebarBtn, els.prev, els.next, els.bookmark, els.fontDown, els.fontUp, els.theme]) {
+    for (const b of [els.sidebarBtn, els.prev, els.next, els.bookmark, els.fontDown, els.fontUp, els.theme, els.moreBtn]) {
       b.disabled = !on;
     }
   }
@@ -1066,6 +1088,14 @@
   function closeOpenMenu() {
     els.openMenu.classList.add('hidden');
     els.open.setAttribute('aria-expanded', 'false');
+  }
+  function toggleMoreMenu() {
+    const open = els.moreMenu.classList.toggle('hidden');
+    els.moreBtn.setAttribute('aria-expanded', open ? 'false' : 'true');
+  }
+  function closeMoreMenu() {
+    els.moreMenu.classList.add('hidden');
+    els.moreBtn.setAttribute('aria-expanded', 'false');
   }
   function renderOpenMenu() {
     const menu = els.openMenu;

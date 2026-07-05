@@ -34,6 +34,16 @@
     <button id="font-down" class="btn" title="Smaller text" disabled>A−</button>
     <button id="font-up" class="btn" title="Larger text" disabled>A+</button>
     <button id="theme-btn" class="btn" title="Toggle light/dark" disabled>◐</button>
+    <!-- On a phone the display controls above collapse into this overflow menu. -->
+    <div id="more-wrap" class="menu-wrap">
+      <button id="more-btn" class="btn" title="More" aria-haspopup="true" aria-expanded="false" disabled>⋯</button>
+      <div id="more-menu" class="menu hidden" role="menu">
+        <button class="menu-item" data-action="bookmark" role="menuitem">☆&nbsp;&nbsp;Bookmark this spot</button>
+        <button class="menu-item" data-action="font-down" role="menuitem">A−&nbsp;&nbsp;Smaller text</button>
+        <button class="menu-item" data-action="font-up" role="menuitem">A+&nbsp;&nbsp;Larger text</button>
+        <button class="menu-item" data-action="theme" role="menuitem">◐&nbsp;&nbsp;Toggle theme</button>
+      </div>
+    </div>
     <span class="spacer"></span>
     <label id="euspell-toggle" class="toggle" title="Show text in euspell reformed spelling">
       <input type="checkbox" id="euspell-checkbox" checked disabled />

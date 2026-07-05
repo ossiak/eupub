@@ -43,9 +43,22 @@ body.immersive #statusbar { display: none; }
   padding: 7px 12px;
   background: var(--bg-toolbar);
   border-bottom: 1px solid var(--border);
-  /* Too many controls for a phone width; scroll them rather than force the
-     page wider than the screen. */
-  overflow-x: auto;
+}
+
+/* Overflow menu: hidden on desktop (the controls sit inline); on a phone the
+   display-setting controls collapse into it so the toolbar fits the screen. */
+#more-wrap { display: none; }
+#more-menu { left: auto; right: 0; } /* anchored to the right end of the bar */
+@media (max-width: 640px) {
+  #more-wrap { display: inline-flex; }
+  #toolbar { gap: 3px; padding: 7px 6px; }
+  #bookmark-btn,
+  #font-down,
+  #font-up,
+  #theme-btn,
+  #toolbar .sep,
+  #progress,
+  .book-title { display: none; }
 }
 
 .btn {
