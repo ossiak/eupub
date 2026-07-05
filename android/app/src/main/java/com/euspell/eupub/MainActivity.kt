@@ -86,6 +86,12 @@ class MainActivity : ComponentActivity() {
             allowFileAccess = false
             allowContentAccess = false
             mediaPlaybackRequiresUserGesture = true
+            // Lay out to the device's CSS width so the reader's columns (derived
+            // from clientWidth) fit the screen. With useWideViewPort=true the
+            // WebView picked a wider viewport (~629px on a 360px screen) and the
+            // text overflowed; false pins layout to the control width.
+            useWideViewPort = false
+            loadWithOverviewMode = false
         }
         webView.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(
@@ -95,6 +101,13 @@ class MainActivity : ComponentActivity() {
 
             override fun onPageFinished(view: WebView, url: String) {
                 maybeSeedSample()
+            }
+        }
+        // Surface the WebView's JS console (errors, warnings) to logcat.
+        webView.webChromeClient = object : android.webkit.WebChromeClient() {
+            override fun onConsoleMessage(m: android.webkit.ConsoleMessage): Boolean {
+                android.util.Log.i("EupubWeb", "${m.message()} @${m.sourceId()}:${m.lineNumber()}")
+                return true
             }
         }
         webView.addJavascriptInterface(Bridge(), "AndroidBridge")

@@ -36,6 +36,14 @@ for (const f of ['reader.js', 'epub.js', 'viewer-runtime.js', 'reader.css', 'and
 //    single virtual origin, and (b) the bridge shim + host config injected
 //    before the renderer scripts (in place of the Electron preload).
 let html = fs.readFileSync(path.join(RENDERER, 'index.html'), 'utf8');
+// Without a viewport meta an Android WebView lays out at a 980px viewport, so
+// clientWidth (which the column geometry is derived from) is far wider than the
+// screen and the text overflows the right edge. Pin the layout to device width.
+if (!html.includes('<meta charset="utf-8" />')) throw new Error('index.html: charset meta not found');
+html = html.replace(
+  '<meta charset="utf-8" />',
+  '<meta charset="utf-8" />\n  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />'
+);
 const csp =
   `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; ` +
   `script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; ` +

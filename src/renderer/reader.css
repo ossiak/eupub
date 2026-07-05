@@ -23,6 +23,11 @@ html, body {
 body {
   display: grid;
   grid-template-rows: auto 1fr auto;
+  /* Pin the single grid column to the viewport. Without this the implicit
+     `auto` column grows to its widest item — the toolbar — so on a narrow phone
+     the whole layout (and the chapter iframe) balloons past the screen and the
+     text is clipped. minmax(0,·) lets rows/children shrink below content. */
+  grid-template-columns: minmax(0, 1fr);
   height: 100vh;
 }
 
@@ -38,6 +43,9 @@ body.immersive #statusbar { display: none; }
   padding: 7px 12px;
   background: var(--bg-toolbar);
   border-bottom: 1px solid var(--border);
+  /* Too many controls for a phone width; scroll them rather than force the
+     page wider than the screen. */
+  overflow-x: auto;
 }
 
 .btn {
@@ -274,6 +282,10 @@ body.immersive #statusbar { display: none; }
 }
 .chapter {
   flex: 1;
+  /* Let the iframe shrink to its flex container: without this its min-content
+     width (its own content) keeps it from shrinking below the viewport on a
+     narrow screen, so it overflows and the text is clipped off the right edge. */
+  min-width: 0;
   border: 0;
   background: #fff;
 }

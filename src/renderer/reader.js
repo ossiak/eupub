@@ -382,6 +382,16 @@
     base.setAttribute('href', baseHref);
     head.insertBefore(base, head.firstChild);
 
+    // A chapter iframe with no viewport meta lays out at the WebView's default
+    // ~980px viewport (Android), so the runtime's columns are far wider than the
+    // frame and the text overflows the screen. Pin it to the frame's own width.
+    // Harmless on desktop, where Chromium ignores the viewport meta.
+    for (const m of doc.querySelectorAll('meta[name="viewport" i]')) m.remove();
+    const viewport = doc.createElement('meta');
+    viewport.setAttribute('name', 'viewport');
+    viewport.setAttribute('content', 'width=device-width, initial-scale=1');
+    head.insertBefore(viewport, head.firstChild);
+
     const style = doc.createElement('style');
     style.textContent = readerStyle();
     head.appendChild(style);
