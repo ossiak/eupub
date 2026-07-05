@@ -47,8 +47,16 @@ window.EupubViewerRuntime = function () {
     var H = document.documentElement.clientHeight;
     // Tighter margins on a phone-width viewport, so the text isn't crowded into
     // a narrow central column; a roomier desktop window keeps the wider margins.
-    var side = W < 600 ? 22 : SIDE;
-    var vpad = W < 600 ? 28 : VPAD;
+    // In landscape (wider than tall) the height is the scarce dimension, so trim
+    // the padding — chiefly the vertical — rather than waste it on empty margin.
+    var side, vpad;
+    if (W < 600) {           // narrow phone (portrait)
+      side = 22; vpad = 28;
+    } else if (W > H) {      // landscape: phone/tablet rotated, or desktop window
+      side = 32; vpad = 22;
+    } else {                 // roomy portrait window
+      side = SIDE; vpad = VPAD;
+    }
     pageWidth = W;
     set(document.documentElement.style, {
       margin: '0', padding: '0', width: W + 'px', height: H + 'px', overflow: 'hidden',

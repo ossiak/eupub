@@ -59,7 +59,6 @@ app.whenReady().then(async () => {
       'html{height:100%;margin:0;overflow:hidden}' +
       'body{max-width:30em;margin:0 auto;padding:1em;box-sizing:content-box}';
     document.head.appendChild(style);
-    const SIDE = 48;
 
     function elResolve(path) {
       let n = document.body;
@@ -113,8 +112,10 @@ app.whenReady().then(async () => {
       'xf=' + document.body.style.transform,
     ]);
 
-    // --- alignment sweep: every page's column must begin at x ≈ SIDE, proving
-    //     the transform step matches the column pitch (no "split pages") ---
+    // --- alignment sweep: every page's column must begin at x ≈ the body's left
+    //     padding, proving the transform step matches the column pitch (no "split
+    //     pages"). The runtime picks the padding responsively, so compare against
+    //     the padding it actually applied rather than a fixed constant. ---
     let maxDev = 0;
     const lefts = [];
     const sweep = Math.min(pages, 6);
@@ -131,7 +132,7 @@ app.whenReady().then(async () => {
       if (el) {
         const left = el.getBoundingClientRect().left;
         lefts.push(p + ':' + Math.round(left));
-        maxDev = Math.max(maxDev, Math.abs(left - SIDE));
+        maxDev = Math.max(maxDev, Math.abs(left - bodyPad));
       }
     }
     log.push([

@@ -1036,7 +1036,7 @@
     localStorage.setItem(hlKey(state.book.sourcePath), JSON.stringify(state.highlights));
   }
   function loadPrefs() {
-    const defaults = { euspell: true, fontSize: 19, theme: 'light', searchCaseSensitive: false };
+    const defaults = { euspell: true, fontSize: 14, theme: 'light', searchCaseSensitive: false };
     try {
       return Object.assign(defaults, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}'));
     } catch {
