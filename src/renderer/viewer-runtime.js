@@ -45,6 +45,10 @@ window.EupubViewerRuntime = function () {
   function applyColumns() {
     var W = document.documentElement.clientWidth;
     var H = document.documentElement.clientHeight;
+    // Tighter margins on a phone-width viewport, so the text isn't crowded into
+    // a narrow central column; a roomier desktop window keeps the wider margins.
+    var side = W < 600 ? 22 : SIDE;
+    var vpad = W < 600 ? 28 : VPAD;
     pageWidth = W;
     set(document.documentElement.style, {
       margin: '0', padding: '0', width: W + 'px', height: H + 'px', overflow: 'hidden',
@@ -53,10 +57,10 @@ window.EupubViewerRuntime = function () {
       'box-sizing': 'border-box',
       width: '100%', 'max-width': 'none', 'min-width': '0',
       height: H + 'px', 'max-height': 'none', 'min-height': '0',
-      margin: '0', padding: VPAD + 'px ' + SIDE + 'px',
+      margin: '0', padding: vpad + 'px ' + side + 'px',
       float: 'none', position: 'static',
-      'column-width': (W - 2 * SIDE) + 'px',
-      'column-gap': 2 * SIDE + 'px',
+      'column-width': (W - 2 * side) + 'px',
+      'column-gap': 2 * side + 'px',
       'column-count': 'auto',
       'column-fill': 'auto',
       overflow: 'visible',
