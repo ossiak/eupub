@@ -144,6 +144,22 @@ body.immersive #statusbar { display: none; }
 }
 .sidebar.hidden { display: none; }
 
+/* On a narrow screen (phone) the sidebar floats over the reader instead of
+   taking a 300px slice of it — otherwise it crowds the text off-screen. It also
+   starts closed there (see reader.js). */
+@media (max-width: 640px) {
+  #layout { position: relative; }
+  .sidebar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 25;
+    max-width: 88%;
+    box-shadow: 2px 0 16px rgba(0, 0, 0, 0.45);
+  }
+}
+
 .tabs {
   display: flex;
   border-bottom: 1px solid var(--border);

@@ -120,6 +120,10 @@
 
     wireEvents();
 
+    // On a phone the sidebar overlays the reader (see reader.css), so start it
+    // closed to keep the book in view; the ☰ button opens it on demand.
+    if (isSmallScreen()) els.sidebar.classList.add('hidden');
+
     // Reopen the most recent book on launch. Fall back to the legacy single-slot
     // key so existing users keep their last book before any recent is recorded.
     const recents = loadRecents();
@@ -614,6 +618,16 @@
     if (name === 'search') els.searchInput.focus();
   }
 
+  // True on a phone-width viewport, where the sidebar overlays the reader.
+  function isSmallScreen() {
+    return window.matchMedia('(max-width: 640px)').matches;
+  }
+  // After choosing a chapter on a phone, close the overlay so the text shows.
+  // (Search/bookmark/note hits don't auto-close — you often browse several.)
+  function closeSidebarIfSmall() {
+    if (isSmallScreen()) els.sidebar.classList.add('hidden');
+  }
+
   function renderToc() {
     els.panelToc.innerHTML = '';
     for (const entry of state.model.toc) {
@@ -623,7 +637,10 @@
       a.dataset.index = entry.spineIndex ?? '';
       a.addEventListener('click', (e) => {
         e.preventDefault();
-        if (entry.spineIndex != null) go(entry.spineIndex, { fragment: entry.fragment });
+        if (entry.spineIndex != null) {
+          go(entry.spineIndex, { fragment: entry.fragment });
+          closeSidebarIfSmall();
+        }
       });
       els.panelToc.appendChild(a);
     }
