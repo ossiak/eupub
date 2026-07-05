@@ -1,0 +1,13 @@
+# Gradle / Android build outputs
+.gradle/
+build/
+app/build/
+local.properties
+*.iml
+.idea/
+
+# Generated assets (produced by prepare-assets.mjs from the Eupub renderer + dist)
+app/src/main/assets/reader/
+app/src/main/assets/engine/
+app/src/main/assets/lexicon.db
+app/src/main/assets/sample.epub
