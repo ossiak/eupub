@@ -159,19 +159,28 @@ body.immersive #statusbar { display: none; }
 
 /* Sidebar (tabbed) ----------------------------------------------------- */
 .sidebar {
-  width: 300px;
-  flex: 0 0 300px;
+  /* Width tracks orientation: half the viewport in portrait (narrow, so a
+     readable TOC needs the room) and a quarter in landscape (wide, so a slim
+     rail leaves the page uncrowded). Capped at the old fixed width so a large
+     desktop window never gets a bigger rail than before. */
+  flex: 0 0 auto;
+  width: 50vw;
+  max-width: 300px;
   background: var(--bg-raised);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
+@media (orientation: landscape) {
+  .sidebar { width: 25vw; }
+}
 .sidebar.hidden { display: none; }
 
 /* On a narrow screen (phone) the sidebar floats over the reader instead of
-   taking a 300px slice of it — otherwise it crowds the text off-screen. It also
-   starts closed there (see reader.js). */
+   taking a slice of it — otherwise it crowds the text off-screen. It also
+   starts closed there (see reader.js). Its width comes from the orientation
+   rules above (half the viewport in portrait). */
 @media (max-width: 640px) {
   #layout { position: relative; }
   .sidebar {
@@ -180,7 +189,6 @@ body.immersive #statusbar { display: none; }
     left: 0;
     bottom: 0;
     z-index: 25;
-    max-width: 88%;
     box-shadow: 2px 0 16px rgba(0, 0, 0, 0.45);
   }
 }
