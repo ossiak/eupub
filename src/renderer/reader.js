@@ -18,6 +18,7 @@
     moreMenu: $('more-menu'),
     sidebar: $('sidebar'),
     sidebarBtn: $('sidebar-btn'),
+    searchBtn: $('search-btn'),
     prev: $('prev-btn'),
     next: $('next-btn'),
     bookmark: $('bookmark-btn'),
@@ -73,7 +74,9 @@
     bookmarks: [],
     highlights: [],
     selection: null,
-    search: { query: '', results: [] },
+    // `current` is the cursor into results for Enter / Shift+Enter / F3 cycling
+    // (-1 = no hit selected yet).
+    search: { query: '', results: [], current: -1 },
     // Monotonic render id: a chapter render that finishes its async read after a
     // newer render started must not touch the iframe (fast TOC clicks race).
     renderToken: 0,
@@ -178,7 +181,10 @@
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { closeOpenMenu(); closeMoreMenu(); }
     });
-    els.sidebarBtn.addEventListener('click', () => els.sidebar.classList.toggle('hidden'));
+    els.sidebarBtn.addEventListener('click', () => {
+      const hidden = els.sidebar.classList.toggle('hidden');
+      if (hidden) els.searchBtn.classList.remove('on');
+    });
     els.prev.addEventListener('click', navPrev);
     els.next.addEventListener('click', navNext);
     els.bookmark.addEventListener('click', addBookmark);
@@ -202,8 +208,17 @@
     for (const tab of document.querySelectorAll('.tab')) {
       tab.addEventListener('click', () => switchTab(tab.dataset.tab));
     }
+    els.searchBtn.addEventListener('click', openSearch);
     els.searchInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') runSearch(els.searchInput.value.trim());
+      // Enter runs a new query, or steps to the next hit if the query is
+      // unchanged; Shift+Enter steps back. Escape hands focus back to the page.
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        submitSearch(e.shiftKey ? -1 : 1);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        returnFocusToPage();
+      }
     });
     els.searchCase.addEventListener('click', () => {
       prefs.searchCaseSensitive = !prefs.searchCaseSensitive;
@@ -215,6 +230,18 @@
 
     window.addEventListener('message', onChapterMessage);
     window.addEventListener('keydown', (e) => {
+      // Ctrl/Cmd+F opens (or re-focuses) the book search from anywhere, incl.
+      // while the input is already focused. F3 / Shift+F3 walk the hits.
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+        e.preventDefault();
+        openSearch();
+        return;
+      }
+      if (e.key === 'F3') {
+        e.preventDefault();
+        cycleResult(e.shiftKey ? -1 : 1);
+        return;
+      }
       if (document.activeElement === els.searchInput) return;
       handleNavKey(e.key);
     });
@@ -256,7 +283,7 @@
 
     state.bookmarks = loadJSON(bmKey(book.sourcePath), []);
     state.highlights = loadJSON(hlKey(book.sourcePath), []);
-    state.search = { query: '', results: [] };
+    state.search = { query: '', results: [], current: -1 };
     state.charCounts = null;
     state.cumChars = null;
     state.totalChars = 0;
@@ -648,6 +675,7 @@
     for (const p of document.querySelectorAll('.panel')) p.classList.toggle('active', p.id === `panel-${name}`);
     els.sidebar.classList.remove('hidden');
     if (name === 'search') els.searchInput.focus();
+    els.searchBtn.classList.toggle('on', name === 'search');
   }
 
   // True on a phone-width viewport, where the sidebar overlays the reader.
@@ -770,6 +798,70 @@
     const on = !!prefs.searchCaseSensitive;
     els.searchCase.classList.toggle('on', on);
     els.searchCase.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+
+  // Open the book search (toolbar 🔍 or Ctrl/Cmd+F): reveal the sidebar, switch
+  // to the Search tab (which focuses the input) and select any existing text so
+  // a new query types straight over it.
+  function openSearch() {
+    if (!state.book) return;
+    switchTab('search');
+    els.searchInput.select();
+  }
+
+  // Enter in the search box: a changed query (or none run yet) runs a fresh
+  // book-wide search and shows the results list — without yanking the reader off
+  // its page. An unchanged query means "walk the hits": step to the next one
+  // (dir -1 for Shift+Enter), same as F3. So the first Enter searches, and each
+  // Enter after that moves through the results.
+  function submitSearch(dir) {
+    const q = els.searchInput.value.trim();
+    if (q !== state.search.query || !state.search.results.length) {
+      runSearch(q);
+    } else {
+      cycleResult(dir);
+    }
+  }
+
+  // Step the result cursor by `dir` (wrapping) and navigate to that hit.
+  function cycleResult(dir) {
+    const res = state.search.results;
+    if (!res.length) return;
+    const cur = state.search.current;
+    const next = cur < 0
+      ? (dir > 0 ? 0 : res.length - 1)
+      : (cur + dir + res.length) % res.length;
+    selectResult(next);
+  }
+
+  // Navigate to result `i`: mark its row current, show the "n / m" counter, and
+  // jump to the chapter with the hit word highlighted. Shared by row clicks and
+  // keyboard cycling.
+  function selectResult(i) {
+    const res = state.search.results;
+    const r = res[i];
+    if (!r) return;
+    state.search.current = i;
+    markCurrentRow(i);
+    setStatus('left', `${i + 1} / ${res.length} for “${state.search.query}”`);
+    go(r.index, {
+      restore: { path: r.path },
+      find: { index: r.index, path: r.path, wordStart: r.wordStart, wordEnd: r.wordEnd },
+    });
+  }
+
+  // Highlight the current result row (rows line up 1:1 with results) and keep it
+  // in view as the cursor moves through a long list.
+  function markCurrentRow(i) {
+    const rows = els.searchResults.children;
+    for (let k = 0; k < rows.length; k++) rows[k].classList.toggle('current', k === i);
+    if (rows[i]) rows[i].scrollIntoView({ block: 'nearest' });
+  }
+
+  // Escape from the search box: drop focus so arrow-key paging works again.
+  function returnFocusToPage() {
+    els.searchInput.blur();
+    els.iframe.focus();
   }
 
   // Loads the euspell engine into the reader process (API only, no auto-run) so
@@ -903,6 +995,7 @@
     const book = state.book;
     state.search.query = query;
     state.search.results = [];
+    state.search.current = -1;
     if (!query || query.length < 2) {
       renderSearchResults([], query);
       return;
@@ -970,18 +1063,15 @@
       return;
     }
     els.searchResults.innerHTML = '';
-    results.forEach((r) => {
+    results.forEach((r, i) => {
       const row = document.createElement('div');
       row.className = 'row';
       // chapterLabel comes from the EPUB's TOC (untrusted) — escape it. r.snippet
       // is already escaped in snippet()/snippetAtWords.
       row.innerHTML = `<div class="row-meta">${escapeHtml(chapterLabel(r.index))}</div><div class="row-text">${r.snippet}</div>`;
-      row.addEventListener('click', () =>
-        go(r.index, {
-          restore: { path: r.path },
-          find: { index: r.index, path: r.path, wordStart: r.wordStart, wordEnd: r.wordEnd },
-        })
-      );
+      // Clicking a row and keyboard cycling share one path (selectResult), so the
+      // "n / m" counter and the current-row marker stay in sync either way.
+      row.addEventListener('click', () => selectResult(i));
       els.searchResults.appendChild(row);
     });
   }
@@ -1018,7 +1108,7 @@
     reRenderKeepingPlace();
   }
   function enableControls(on) {
-    for (const b of [els.sidebarBtn, els.prev, els.next, els.bookmark, els.fontDown, els.fontUp, els.theme, els.moreBtn]) {
+    for (const b of [els.sidebarBtn, els.searchBtn, els.prev, els.next, els.bookmark, els.fontDown, els.fontUp, els.theme, els.moreBtn]) {
       b.disabled = !on;
     }
   }

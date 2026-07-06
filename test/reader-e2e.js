@@ -189,6 +189,58 @@ app.whenReady().then(async () => {
     return '(no highlight)';
   })()`);
 
+  // Search box wiring: Ctrl+F opens/focuses the search from the page; a second
+  // Enter (unchanged query) and F3 walk the hits with an "n / m" counter, and
+  // the 🔍 toolbar button opens the search too. (Runs after hover probing since
+  // cycling navigates chapters.)
+  const searchNav = await win.webContents.executeJavaScript(`(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const input = document.getElementById('search-input');
+    const status = () => document.getElementById('status-left').textContent;
+    const enter = (shift) => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: !!shift, bubbles: true }));
+
+    // Ctrl+F from the page opens the Search tab and focuses the input.
+    document.getElementById('chapter').focus();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true }));
+    await sleep(60);
+    const ctrlFOpens = document.querySelector('.tab[data-tab="search"]').classList.contains('active')
+      && document.activeElement === input;
+
+    // First Enter runs the search (list appears, no navigation yet).
+    input.value = 'the';
+    enter(false);
+    let rows = 0;
+    for (let i = 0; i < 40; i++) { rows = document.querySelectorAll('#search-results .row').length; if (rows >= 2) break; await sleep(100); }
+
+    // Second Enter walks to hit 1, third to hit 2, Shift+Enter back to hit 1.
+    enter(false);
+    await sleep(200);
+    const counter1 = status();
+    const firstCurrent = [...document.querySelectorAll('#search-results .row')].findIndex((r) => r.classList.contains('current'));
+    enter(false);
+    await sleep(200);
+    const counter2 = status();
+    enter(true);
+    await sleep(200);
+    const counter3 = status();
+
+    // F3 also advances from anywhere (dispatch on window, not the input).
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }));
+    await sleep(200);
+    const counterF3 = status();
+
+    // The 🔍 toolbar button opens the search after the sidebar is hidden.
+    document.getElementById('sidebar-btn').click();
+    await sleep(30);
+    const hidden = document.getElementById('sidebar').classList.contains('hidden');
+    document.getElementById('search-btn').click();
+    await sleep(30);
+    const btnOpens = !document.getElementById('sidebar').classList.contains('hidden')
+      && document.querySelector('.tab[data-tab="search"]').classList.contains('active');
+
+    return { ctrlFOpens, rows, counter1, firstCurrent, counter2, counter3, counterF3, hidden, btnOpens };
+  })()`);
+
   // Recent-files menu: loading the book should have recorded it under
   // 'eupub:recent'; clicking Open opens a menu whose first item is the picker
   // and which lists the recent book; an outside click closes it.
@@ -263,6 +315,15 @@ app.whenReady().then(async () => {
       'opened=' + recentMenu.opened + ' first="' + recentMenu.first + '" recents=' + recentMenu.recentCount + ' label="' + recentMenu.firstLabel + '"',
     ],
     ['recent-menu-closes', recentMenu.closed, 'closed=' + recentMenu.closed],
+    ['search-ctrlf-opens', searchNav.ctrlFOpens, 'rows=' + searchNav.rows],
+    [
+      'search-cycle',
+      /^1 \/ /.test(searchNav.counter1) && searchNav.firstCurrent === 0
+        && /^2 \/ /.test(searchNav.counter2) && /^1 \/ /.test(searchNav.counter3)
+        && /^2 \/ /.test(searchNav.counterF3),
+      'c1="' + searchNav.counter1 + '" cur=' + searchNav.firstCurrent + ' c2="' + searchNav.counter2 + '" back="' + searchNav.counter3 + '" f3="' + searchNav.counterF3 + '"',
+    ],
+    ['search-button-opens', searchNav.hidden && searchNav.btnOpens, 'hidden=' + searchNav.hidden + ' opens=' + searchNav.btnOpens],
   ];
   for (const [name, ok, info] of checks) console.log((ok ? 'PASS ' : 'FAIL ') + name.padEnd(16), info);
   const passed = checks.every((c) => c[1]);

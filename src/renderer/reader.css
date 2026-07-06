@@ -244,6 +244,8 @@ body.immersive #statusbar { display: none; }
   color: var(--text-dim);
 }
 .row:hover { background: rgba(255, 255, 255, 0.04); color: var(--text); }
+/* The search hit the reader is currently parked on (Enter / F3 / click). */
+.row.current { background: rgba(91, 155, 213, 0.16); color: var(--text); box-shadow: inset 3px 0 0 var(--accent); }
 .row .row-meta { font-size: 11px; color: var(--accent); margin-bottom: 2px; }
 .row .row-text { color: var(--text); }
 .row .row-del {
