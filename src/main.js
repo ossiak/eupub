@@ -11,9 +11,46 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { openEpub: extractEpub } = require('./epub-extract');
 const { openText } = require('./text-open');
+const { integrateAppImage } = require('./linux-integrate');
+
+// Render natively on Wayland (Plasma 6's default) instead of via XWayland, which
+// blurs on fractional scaling. Harmless on X11 (auto falls back). Must be set
+// before the app is ready.
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
+}
 
 /** @type {BrowserWindow | null} */
 let win = null;
+
+// A book path passed on the command line / by the OS file association, delivered
+// to the renderer once its window has loaded (see createWindow + 'open-file').
+/** @type {string | null} */
+let pendingOpen = bookPathFromArgv(process.argv);
+
+/** First existing .epub/.txt path in an argv array, or null. Skips flags and the
+ * app/exec path so `electron .` and packaged launches both parse correctly. */
+function bookPathFromArgv(argv) {
+  for (const arg of argv.slice(1)) {
+    if (!arg || arg.startsWith('-') || !/\.(epub|txt)$/i.test(arg)) continue;
+    try {
+      if (fs.existsSync(arg)) return path.resolve(arg);
+    } catch {
+      /* unreadable — keep looking */
+    }
+  }
+  return null;
+}
+
+/** Tell the renderer to open a book path, buffering until the window has loaded. */
+function deliverOpen(filePath) {
+  if (!filePath) return;
+  if (win && !win.webContents.isLoading()) {
+    win.webContents.send('open-file', filePath);
+  } else {
+    pendingOpen = filePath;
+  }
+}
 
 // Temp dirs we extract books into, removed on quit so we don't litter %TEMP%.
 /** @type {string[]} */
@@ -40,15 +77,46 @@ function createWindow() {
   });
   win.removeMenu();
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  // Deliver a launch-time book (double-clicked EPUB / CLI arg) once the reader
+  // is ready to receive it.
+  win.webContents.once('did-finish-load', () => {
+    if (pendingOpen) {
+      win.webContents.send('open-file', pendingOpen);
+      pendingOpen = null;
+    }
+  });
 }
 
-app.whenReady().then(() => {
-  createWindow();
-  sweepStaleTempDirs();
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+// Single instance: a second `eupub book.epub` (e.g. double-clicking another EPUB
+// while Eupub is open) forwards the path to the running window instead of
+// launching a duplicate process.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', (_e, argv) => {
+    const filePath = bookPathFromArgv(argv);
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+      deliverOpen(filePath);
+    }
   });
-});
+
+  // macOS delivers opened files via this event rather than argv.
+  app.on('open-file', (e, filePath) => {
+    e.preventDefault();
+    deliverOpen(filePath);
+  });
+
+  app.whenReady().then(() => {
+    createWindow();
+    sweepStaleTempDirs();
+    integrateAppImage();
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

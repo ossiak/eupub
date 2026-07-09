@@ -16,7 +16,8 @@
     "test:smoke": "electron test/smoke.js",
     "icon": "node build/make-icon.js",
     "package": "npm run build && node build/package.js",
-    "dist": "npm run build && electron-builder --win nsis"
+    "dist": "npm run build && electron-builder --win nsis",
+    "dist:linux": "npm run build && electron-builder --linux AppImage"
   },
   "devDependencies": {
     "@electron/packager": "^20.0.1",
@@ -45,12 +46,34 @@
     ],
     "asar": true,
     "electronVersion": "33.4.11",
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      }
+    ],
     "win": {
       "target": [
         "nsis"
       ],
       "icon": "build/icon.ico",
       "artifactName": "eupub-Setup-${version}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "build/icon.png",
+      "category": "Office",
+      "mimeTypes": [
+        "application/epub+zip"
+      ],
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "eupub"
+        }
+      },
+      "artifactName": "Eupub-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,

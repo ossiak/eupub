@@ -9,6 +9,10 @@ contextBridge.exposeInMainWorld('eupub', {
   pickEpub: () => ipcRenderer.invoke('epub:pick'),
   openPath: (filePath) => ipcRenderer.invoke('epub:openPath', filePath),
 
+  // A book opened from outside the app (double-clicked in the file manager, or
+  // passed on the command line). The callback receives the absolute path.
+  onOpenFile: (cb) => ipcRenderer.on('open-file', (_e, filePath) => cb(filePath)),
+
   // Engine + filesystem.
   engineSource: () => ipcRenderer.invoke('engine:source'),
   readText: (filePath) => ipcRenderer.invoke('fs:readText', filePath),

@@ -130,6 +130,13 @@
     // closed to keep the book in view; the ☰ button opens it on demand.
     if (isSmallScreen()) els.sidebar.classList.add('hidden');
 
+    // A book opened from the OS (double-clicked in the file manager, or a CLI
+    // arg) arrives via this channel; reuse the open-by-path + load flow. Guarded
+    // because the Android bridge doesn't provide it.
+    if (window.eupub.onOpenFile) {
+      window.eupub.onOpenFile((filePath) => openRecent(filePath));
+    }
+
     // Reopen the most recent book on launch. Fall back to the legacy single-slot
     // key so existing users keep their last book before any recent is recorded.
     const recents = loadRecents();
