@@ -17,8 +17,7 @@ const MAX_PARAGRAPHS = 200;
  * @returns {{ sourcePath: string, rootDir: string, opfDir: string, opfPath: string, opfXml: string }}
  */
 function openText(filePath) {
-  const raw = fs
-    .readFileSync(filePath, 'utf8')
+  const raw = decodeText(fs.readFileSync(filePath))
     .replace(/^﻿/, '') // strip a BOM
     .replace(/\r\n?/g, '\n'); // normalize newlines
   const title = titleFromPath(filePath);
@@ -36,6 +35,34 @@ function openText(filePath) {
   fs.writeFileSync(opfPath, opfXml, 'utf8');
 
   return { sourcePath: filePath, rootDir, opfDir: rootDir, opfPath, opfXml };
+}
+
+/** Decode a text file without assuming UTF-8: UTF-16 BOMs first (Windows
+ * Notepad's historical default), then strict UTF-8, then windows-1252 — the
+ * near-universal legacy 8-bit encoding — so a Latin-1-era .txt doesn't render
+ * as mojibake. */
+function decodeText(buf) {
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) {
+    return trimToEven(buf.subarray(2)).toString('utf16le');
+  }
+  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
+    return Buffer.from(trimToEven(buf.subarray(2))).swap16().toString('utf16le');
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+  } catch {
+    try {
+      return new TextDecoder('windows-1252').decode(buf);
+    } catch {
+      return buf.toString('latin1'); // no ICU — close enough to 1252
+    }
+  }
+}
+
+/** UTF-16 needs an even byte count; drop a trailing stray byte from a
+ * truncated file rather than throw in swap16/decode. */
+function trimToEven(buf) {
+  return buf.length % 2 ? buf.subarray(0, buf.length - 1) : buf;
 }
 
 // --- text -> chapters -------------------------------------------------------

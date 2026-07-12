@@ -13,6 +13,13 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { execFile } = require('node:child_process');
 
+/** Quote a path for a .desktop Exec value: backslash-escape the characters the
+ * spec reserves inside double quotes, then double any % so it can't be parsed
+ * as a field code (field codes are expanded even inside quotes). */
+function execQuote(p) {
+  return '"' + p.replace(/[`"$\\]/g, '\\$&').replace(/%/g, '%%') + '"';
+}
+
 /** Fire-and-forget a cache-refresh tool; ignore missing tools or failures. */
 function refresh(cmd, args) {
   try {
@@ -42,16 +49,20 @@ function integrateAppImage() {
     const iconSrc = path.join(process.resourcesPath, 'icon.png');
     if (fs.existsSync(iconSrc)) fs.copyFileSync(iconSrc, path.join(iconDir, 'eupub.png'));
 
-    // %U passes the double-clicked file(s) as arguments; the main process reads
-    // them from argv (see main.js). Only claim application/epub+zip — not
-    // text/plain — so Eupub doesn't become a candidate handler for every .txt.
+    // %F passes the double-clicked file(s) as LOCAL PATHS (the main process
+    // reads them from argv — see main.js); %U could hand us URLs for remote
+    // locations, which %F makes the desktop environment localize first. Only
+    // claim application/epub+zip — not text/plain — so Eupub doesn't become a
+    // candidate handler for every .txt. TryExec hides the menu entry if the
+    // AppImage is later moved or deleted, instead of leaving a dead launcher.
     const desktop =
       [
         '[Desktop Entry]',
         'Type=Application',
         'Name=Eupub',
         'Comment=Read EPUBs in euspell reformed spelling',
-        `Exec="${appImage}" %U`,
+        `TryExec=${appImage}`,
+        `Exec=${execQuote(appImage)} %F`,
         'Icon=eupub',
         'Terminal=false',
         'Categories=Office;Viewer;',

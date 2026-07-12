@@ -9,6 +9,10 @@ const os = require('node:os');
 const { openText } = require('../src/text-open');
 
 app.disableHardwareAcceleration();
+// Isolate userData: with the real profile, reader.js auto-reopens the user's
+// last book into the same #chapter iframe this test drives (a race the test
+// loses), and the test would overwrite the user's saved reading state.
+app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'eupub-test-')));
 
 ipcMain.handle('epub:openPath', (_e, p) => openText(p));
 ipcMain.handle('fs:readText', (_e, p) => fs.readFileSync(p, 'utf8'));

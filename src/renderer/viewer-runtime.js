@@ -214,10 +214,49 @@ window.EupubViewerRuntime = function () {
 
   // --- highlights & search marks (range wrapping) ---
 
+  // Anchor boundaries are stored as WORD indexes, because euspell reforms each
+  // word in place (word count and order survive) while char offsets shift with
+  // the respelling — a char-offset highlight made in one spelling lands on the
+  // wrong text in the other. Boundaries snap to whole words. The char offset is
+  // kept alongside as a fallback for anchors saved before word indexes existed
+  // (and for word-less blocks).
+  function anchorBoundaryOffset(block, b, isEnd) {
+    var text = block.textContent || '';
+    if (b.word != null) {
+      var w = wordRangeCharOffsets(text, b.word, b.word);
+      if (w) return isEnd ? w.end : w.start;
+    }
+    var off = b.off != null ? b.off : 0;
+    return Math.max(0, Math.min(off, text.length));
+  }
+  // Word index containing char offset `off` — or, for a start boundary in
+  // whitespace, the next word; for an end boundary (exclusive), the last word
+  // beginning before it.
+  function wordIndexForStart(text, off) {
+    WORD_RE.lastIndex = 0;
+    var i = 0, m, last = 0;
+    while ((m = WORD_RE.exec(text))) {
+      if (m.index + m[0].length > off) return i;
+      last = i;
+      i++;
+    }
+    return last; // past the last word — snap to it
+  }
+  function wordIndexForEnd(text, off) {
+    WORD_RE.lastIndex = 0;
+    var i = 0, m, last = 0;
+    while ((m = WORD_RE.exec(text))) {
+      if (m.index >= off) break;
+      last = i;
+      i++;
+    }
+    return last;
+  }
   function rangeFromAnchor(a) {
     var sBlock = elResolve(a.start.path), eBlock = elResolve(a.end.path);
     if (!sBlock || !eBlock) return null;
-    var s = resolveCharOffset(sBlock, a.start.off), e = resolveCharOffset(eBlock, a.end.off);
+    var s = resolveCharOffset(sBlock, anchorBoundaryOffset(sBlock, a.start, false));
+    var e = resolveCharOffset(eBlock, anchorBoundaryOffset(eBlock, a.end, true));
     if (!s || !e) return null;
     var r = document.createRange();
     try { r.setStart(s.node, s.offset); r.setEnd(e.node, e.offset); } catch (err) { return null; }
@@ -225,9 +264,11 @@ window.EupubViewerRuntime = function () {
   }
   function anchorFromRange(r) {
     var sb = nearestBlock(r.startContainer), eb = nearestBlock(r.endContainer);
+    var sOff = charOffsetIn(sb, r.startContainer, r.startOffset);
+    var eOff = charOffsetIn(eb, r.endContainer, r.endOffset);
     return {
-      start: { path: elPath(sb), off: charOffsetIn(sb, r.startContainer, r.startOffset) },
-      end: { path: elPath(eb), off: charOffsetIn(eb, r.endContainer, r.endOffset) },
+      start: { path: elPath(sb), off: sOff, word: wordIndexForStart(sb.textContent || '', sOff) },
+      end: { path: elPath(eb), off: eOff, word: wordIndexForEnd(eb.textContent || '', eOff) },
     };
   }
   function nodeIntersects(range, node) {

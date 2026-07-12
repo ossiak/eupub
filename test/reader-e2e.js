@@ -4,10 +4,14 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
 const { openEpub } = require('../src/epub-extract');
 const { makeEpub } = require('./make-epub');
 
 app.disableHardwareAcceleration();
+// Isolate userData so this test seeds its own last-book state instead of
+// reading — or overwriting — the user's real reading state.
+app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'eupub-test-')));
 setTimeout(() => { console.log('FAIL — timed out (30s)'); app.exit(3); }, 30000);
 
 // Mirror main.js: the reader now uses the lexicon-excluded engine plus a

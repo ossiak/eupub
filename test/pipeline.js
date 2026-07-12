@@ -6,10 +6,15 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
 const { openEpub } = require('../src/epub-extract');
 const { makeEpub } = require('./make-epub');
 
 app.disableHardwareAcceleration();
+// Isolate userData: with the real profile, reader.js auto-reopens the user's
+// last book into the same #chapter iframe this test drives (a race the test
+// loses), and the test would overwrite the user's saved reading state.
+app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'eupub-test-')));
 
 ipcMain.handle('epub:openPath', (_e, p) => openEpub(p));
 ipcMain.handle('fs:readText', (_e, p) => fs.readFileSync(p, 'utf8'));

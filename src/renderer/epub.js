@@ -11,14 +11,21 @@
 
   /**
    * @param {{ opfDir: string, opfXml: string }} book
-   * @returns {{ title: string, spine: SpineItem[], toc: TocEntry[] }}
+   * @param {Document} [opfDoc] already-parsed OPF, so callers that also need the
+   *   nav/ncx items (parseAsync) parse the package document only once
+   * @returns {{ title: string, identifier: string, spine: SpineItem[], toc: TocEntry[] }}
    */
-  function parse(book) {
-    const doc = xml.parseFromString(book.opfXml, 'application/xml');
+  function parse(book, opfDoc) {
+    const doc = opfDoc || xml.parseFromString(book.opfXml, 'application/xml');
     const pkg = doc.documentElement;
 
     const title =
       text(doc.querySelector('metadata > title, metadata title')) || 'Untitled';
+
+    // dc:identifier — a stable key for per-book saved state (position,
+    // bookmarks, highlights) that survives the file being moved or renamed.
+    const identifier =
+      text(doc.querySelector('metadata > identifier, metadata identifier')) || '';
 
     // Manifest: id -> { href (relative), absPath, mediaType, properties }.
     const manifest = new Map();
@@ -53,7 +60,7 @@
     // parse() is synchronous, so it can only build the spine-derived TOC. The
     // real nav/ncx TOC needs to read another file (async IPC) — parseAsync()
     // upgrades model.toc once that read resolves.
-    return { title, spine, toc: tocFromSpine(spine) };
+    return { title, identifier, spine, toc: tocFromSpine(spine) };
   }
 
   // --- Fallback: derive a flat TOC from the spine ----------------------
@@ -77,9 +84,10 @@
    * @param {{ opfDir: string, opfXml: string }} book
    */
   async function parseAsync(book) {
-    const model = parse(book);
+    const opfDoc = xml.parseFromString(book.opfXml, 'application/xml');
+    const model = parse(book, opfDoc);
 
-    const navItem = findNavItem(book);
+    const navItem = findNavItem(book, opfDoc);
     if (navItem) {
       try {
         const html = await window.eupub.readText(navItem.absPath);
@@ -95,7 +103,7 @@
       }
     }
 
-    const ncx = findNcxItem(book);
+    const ncx = findNcxItem(book, opfDoc);
     if (ncx) {
       try {
         const text = await window.eupub.readText(ncx.absPath);
@@ -108,8 +116,7 @@
     return model;
   }
 
-  function findNavItem(book) {
-    const doc = xml.parseFromString(book.opfXml, 'application/xml');
+  function findNavItem(book, doc) {
     for (const item of doc.querySelectorAll('manifest > item')) {
       if (/\bnav\b/.test(item.getAttribute('properties') || '') && item.getAttribute('href')) {
         const abs = resolve(book.opfDir, item.getAttribute('href'));
@@ -119,8 +126,7 @@
     return null;
   }
 
-  function findNcxItem(book) {
-    const doc = xml.parseFromString(book.opfXml, 'application/xml');
+  function findNcxItem(book, doc) {
     const tocId = doc.querySelector('spine')?.getAttribute('toc');
     const item = tocId
       ? doc.querySelector(`manifest > item[id="${cssEscape(tocId)}"]`)
@@ -195,11 +201,26 @@
     const hashAt = href.indexOf('#');
     const fragment = hashAt === -1 ? '' : href.slice(hashAt + 1);
     const file = hashAt === -1 ? href : href.slice(0, hashAt);
+    // A TOC entry pointing at a remote URL (legal in a nav, rare) has no local
+    // file to open — leave it label-only (no absPath → no spine match → not
+    // clickable) rather than path.join the URL into a nonsense path.
+    if (/^[a-z][a-z0-9+.-]*:/i.test(file)) return { absPath: '', fragment };
     return { absPath: resolve(baseDir, file), fragment };
   }
 
   function resolve(baseDir, href) {
-    return window.eupub.join(baseDir, decodeURIComponent(href));
+    return window.eupub.join(baseDir, safeDecode(href));
+  }
+
+  // Manifest/TOC hrefs should be percent-encoded URLs, but real EPUBs contain
+  // literal "%" in filenames — decodeURIComponent would throw and abort the
+  // whole book load, so fall back to the raw string.
+  function safeDecode(s) {
+    try {
+      return decodeURIComponent(s);
+    } catch {
+      return s;
+    }
   }
 
   function childrenByTag(parent, tag) {
@@ -217,7 +238,7 @@
   }
   function prettyName(p) {
     const base = (p.split(/[\\/]/).pop() || p).replace(/\.[a-z0-9]+$/i, '');
-    return decodeURIComponent(base).replace(/[_-]+/g, ' ').trim() || 'Section';
+    return safeDecode(base).replace(/[_-]+/g, ' ').trim() || 'Section';
   }
   function cssEscape(s) {
     return s.replace(/["\\]/g, '\\$&');

@@ -65,6 +65,10 @@
   const state = {
     book: null,
     model: null,
+    // Storage key for this book's saved state (position/bookmarks/highlights):
+    // the OPF dc:identifier when it has one — stable when the file is moved or
+    // renamed — else the file path. See loadBookState for the legacy fallback.
+    bookKey: null,
     index: -1,
     page: 0,
     pages: 1,
@@ -288,8 +292,10 @@
     state.model = await window.EupubModel.parseAsync(book);
     for (const s of state.model.spine) s.fileURL = window.eupub.fileURL(s.absPath);
 
-    state.bookmarks = loadJSON(bmKey(book.sourcePath), []);
-    state.highlights = loadJSON(hlKey(book.sourcePath), []);
+    // 'id:' prefix so an identifier can't collide with a path-shaped legacy key.
+    state.bookKey = state.model.identifier ? `id:${state.model.identifier}` : book.sourcePath;
+    state.bookmarks = loadBookState(bmKey, []);
+    state.highlights = loadBookState(hlKey, []);
     state.search = { query: '', results: [], current: -1 };
     state.charCounts = null;
     state.cumChars = null;
@@ -309,7 +315,7 @@
     renderSearchResults([], '');
     enableControls(true);
 
-    const saved = loadJSON(posKey(book.sourcePath), null);
+    const saved = loadBookState(posKey, null);
     state.currentLocator = saved && saved.locator ? saved.locator : null;
     const start = saved && Number.isInteger(saved.index) && saved.index < state.model.spine.length ? saved.index : 0;
     go(start, { restore: state.currentLocator });
@@ -492,13 +498,23 @@
   // CSP, and nested browsing contexts carry their own unscanned markup.
   function sanitizeChapterDoc(doc) {
     for (const el of doc.querySelectorAll('script, iframe, frame, object, embed')) el.remove();
+    // A refresh meta would NAVIGATE the iframe — to another file from the book,
+    // whose markup never went through this sanitizer, so its scripts would run.
+    for (const m of doc.querySelectorAll('meta[http-equiv]')) {
+      if (/refresh/i.test(m.getAttribute('http-equiv') || '')) m.remove();
+    }
     for (const el of doc.querySelectorAll('*')) {
       for (const attr of [...el.attributes]) {
         const name = attr.name.toLowerCase();
         if (name.startsWith('on')) {
           el.removeAttribute(attr.name);
+        } else if (name === 'action' || name === 'formaction') {
+          // Form submission is the same unsanitized-navigation vector as a
+          // refresh meta (one click on book-styled content). Forms can't do
+          // anything useful offline, so drop their targets entirely.
+          el.removeAttribute(attr.name);
         } else if (
-          (name === 'href' || name === 'src' || name === 'action' || name === 'formaction' || name === 'xlink:href') &&
+          (name === 'href' || name === 'src' || name === 'xlink:href') &&
           /^javascript:/i.test(attr.value.replace(/[\s\u0000-\u001f]/g, ''))
         ) {
           el.removeAttribute(attr.name);
@@ -1124,13 +1140,22 @@
 
   function savePosition() {
     if (!state.book) return;
-    localStorage.setItem(posKey(state.book.sourcePath), JSON.stringify({ index: state.index, locator: state.currentLocator }));
+    localStorage.setItem(posKey(state.bookKey), JSON.stringify({ index: state.index, locator: state.currentLocator }));
   }
   function saveBookmarks() {
-    localStorage.setItem(bmKey(state.book.sourcePath), JSON.stringify(state.bookmarks));
+    localStorage.setItem(bmKey(state.bookKey), JSON.stringify(state.bookmarks));
   }
   function saveHighlights() {
-    localStorage.setItem(hlKey(state.book.sourcePath), JSON.stringify(state.highlights));
+    localStorage.setItem(hlKey(state.bookKey), JSON.stringify(state.highlights));
+  }
+  // Saved state for the current book: the stable identifier key first, then the
+  // legacy path key (state saved before identifier keys existed — it migrates
+  // to the stable key on the next save).
+  function loadBookState(keyFn, fallback) {
+    const v = loadJSON(keyFn(state.bookKey), null);
+    if (v != null) return v;
+    const legacy = loadJSON(keyFn(state.book.sourcePath), null);
+    return legacy != null ? legacy : fallback;
   }
   function loadPrefs() {
     const defaults = { euspell: true, fontSize: 14, theme: 'light', searchCaseSensitive: false };

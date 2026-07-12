@@ -26,15 +26,28 @@ let win = null;
 // A book path passed on the command line / by the OS file association, delivered
 // to the renderer once its window has loaded (see createWindow + 'open-file').
 /** @type {string | null} */
-let pendingOpen = bookPathFromArgv(process.argv);
+let pendingOpen = bookPathFromArgv(process.argv, process.cwd());
 
 /** First existing .epub/.txt path in an argv array, or null. Skips flags and the
- * app/exec path so `electron .` and packaged launches both parse correctly. */
-function bookPathFromArgv(argv) {
+ * app/exec path so `electron .` and packaged launches both parse correctly.
+ * Accepts file:// URLs (desktop launchers may pass those instead of plain
+ * paths) and resolves relative paths against `cwd` — which for a forwarded
+ * second instance is THAT instance's working directory, not ours. */
+function bookPathFromArgv(argv, cwd) {
   for (const arg of argv.slice(1)) {
-    if (!arg || arg.startsWith('-') || !/\.(epub|txt)$/i.test(arg)) continue;
+    if (!arg || arg.startsWith('-')) continue;
+    let candidate = arg;
+    if (/^file:\/\//i.test(arg)) {
+      try {
+        candidate = require('node:url').fileURLToPath(arg);
+      } catch {
+        continue; // malformed or non-local (file://host/…) URL
+      }
+    }
+    if (!/\.(epub|txt)$/i.test(candidate)) continue;
+    const abs = path.resolve(cwd || process.cwd(), candidate);
     try {
-      if (fs.existsSync(arg)) return path.resolve(arg);
+      if (fs.existsSync(abs)) return abs;
     } catch {
       /* unreadable — keep looking */
     }
@@ -42,7 +55,8 @@ function bookPathFromArgv(argv) {
   return null;
 }
 
-/** Tell the renderer to open a book path, buffering until the window has loaded. */
+/** Tell the renderer to open a book path, buffering until a window has loaded
+ * (the buffered path is flushed by createWindow's did-finish-load handler). */
 function deliverOpen(filePath) {
   if (!filePath) return;
   if (win && !win.webContents.isLoading()) {
@@ -56,6 +70,25 @@ function deliverOpen(filePath) {
 /** @type {string[]} */
 const tempDirs = [];
 
+// Window icon for Linux, where X11 taskbars/switchers otherwise show the stock
+// Electron icon (Windows gets it from the exe, macOS from the bundle; the
+// AppImage menu entry is handled separately in linux-integrate). Packaged
+// builds carry it in resources (see build.extraResources); dev uses build/.
+function linuxWindowIcon() {
+  if (process.platform !== 'linux') return undefined;
+  for (const p of [
+    path.join(process.resourcesPath || '', 'icon.png'),
+    path.join(__dirname, '..', 'build', 'icon.png'),
+  ]) {
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch {
+      /* keep looking */
+    }
+  }
+  return undefined;
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1180,
@@ -64,6 +97,7 @@ function createWindow() {
     minHeight: 520,
     backgroundColor: '#1b1d23',
     title: 'Eupub',
+    icon: linuxWindowIcon(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -76,11 +110,17 @@ function createWindow() {
     },
   });
   win.removeMenu();
+  win.on('closed', () => {
+    // Without this, a book delivered after the window closes (macOS open-file,
+    // second-instance) would touch a destroyed webContents and throw.
+    win = null;
+  });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-  // Deliver a launch-time book (double-clicked EPUB / CLI arg) once the reader
-  // is ready to receive it.
-  win.webContents.once('did-finish-load', () => {
-    if (pendingOpen) {
+  // Deliver a pending book (launch-time CLI arg / double-clicked EPUB, or one
+  // buffered by deliverOpen while the window was loading) after EVERY load —
+  // a once() would strand anything buffered during a later reload.
+  win.webContents.on('did-finish-load', () => {
+    if (pendingOpen && win) {
       win.webContents.send('open-file', pendingOpen);
       pendingOpen = null;
     }
@@ -93,13 +133,15 @@ function createWindow() {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', (_e, argv) => {
-    const filePath = bookPathFromArgv(argv);
+  // workingDirectory is the SECOND instance's cwd — relative paths in its argv
+  // (`cd ~/books && eupub x.epub`) mean nothing against our own cwd.
+  app.on('second-instance', (_e, argv, workingDirectory) => {
+    const filePath = bookPathFromArgv(argv, workingDirectory);
     if (win) {
       if (win.isMinimized()) win.restore();
       win.focus();
-      deliverOpen(filePath);
     }
+    deliverOpen(filePath); // buffers if no window is open (macOS dock relaunch)
   });
 
   // macOS delivers opened files via this event rather than argv.
@@ -211,21 +253,29 @@ ipcMain.handle('shell:openExternal', (_e, href) => {
   }
 });
 
-// Open a book by extension — extract an EPUB, or synthesize an EPUB-shaped book
-// from a .txt — and remember its temp dir so we can clean it up. Once the new
-// book has extracted, the previous books' dirs are unreachable from the UI, so
-// free them now instead of letting them pile up until quit.
+// Open a book by extension — extract an EPUB (async, off the main thread), or
+// synthesize an EPUB-shaped book from a .txt — and remember its temp dir so we
+// can clean it up. Once the new book has extracted, the previous books' dirs
+// are unreachable from the UI, so free them now instead of letting them pile up
+// until quit. Opens are serialized: two in flight at once (a picker choice
+// racing a second-instance forward) must not interleave the extract/cleanup
+// steps, or the loser's cleanup could delete the winner's fresh dir.
+let openQueue = Promise.resolve();
 function openBook(filePath) {
-  const book = /\.txt$/i.test(filePath) ? openText(filePath) : extractEpub(filePath);
-  while (tempDirs.length) {
-    try {
-      fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
-    } catch {
-      /* best effort */
+  const run = openQueue.then(async () => {
+    const book = /\.txt$/i.test(filePath) ? openText(filePath) : await extractEpub(filePath);
+    while (tempDirs.length) {
+      try {
+        fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
+      } catch {
+        /* best effort */
+      }
     }
-  }
-  tempDirs.push(book.rootDir);
-  return book;
+    tempDirs.push(book.rootDir);
+    return book;
+  });
+  openQueue = run.catch(() => {}); // a failed open must not wedge the queue
+  return run;
 }
 
 // Extraction dirs left behind by crashed sessions. Only sweep dirs old enough
