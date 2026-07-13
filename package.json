@@ -5,6 +5,9 @@
   "author": "Kamran Ossia",
   "license": "GPL-3.0-or-later",
   "main": "src/main.js",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "build:engine": "rollup -c rollup.engine.config.mjs",
     "build:engine:mobile": "rollup -c rollup.engine.mobile.config.mjs",
