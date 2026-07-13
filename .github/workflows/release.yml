@@ -1,5 +1,6 @@
-# Builds the Linux AppImage and publishes it to a GitHub Release when a
-# version tag (v*) is pushed. Cut a release with:
+# Builds the Linux AppImage. On a version tag (v*) push it publishes a GitHub
+# Release; on a manual run (workflow_dispatch) it just uploads the AppImage as a
+# downloadable workflow artifact — a dry run with no tag/release. Cut a release:
 #   npm version <x.y.z>   # edits package.json + creates the tag
 #   git push origin main --tags
 name: Release
@@ -7,6 +8,7 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch: # manual dry run from the Actions tab (builds, no release)
 
 permissions:
   contents: write # create the release and upload the AppImage asset
@@ -25,8 +27,10 @@ jobs:
 
       # Guard against a tag/package.json mismatch before the multi-minute build:
       # the tag drives the release name, package.json drives the artifact name
-      # (Eupub-${version}.AppImage), so they must agree.
+      # (Eupub-${version}.AppImage), so they must agree. Tag runs only — a manual
+      # dry run has no tag to check.
       - name: Check tag matches package.json version
+        if: github.ref_type == 'tag'
         run: |
           pkg="v$(node -p "require('./package.json').version")"
           if [ "$pkg" != "$GITHUB_REF_NAME" ]; then
@@ -38,10 +42,22 @@ jobs:
       # --linux AppImage. artifactName is Eupub-${version}.AppImage.
       - run: npm run dist:linux
 
+      # Tag push → publish a Release with the AppImage attached.
       - name: Publish release
+        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/Eupub-*.AppImage \
             --title "Eupub ${GITHUB_REF_NAME#v}" \
             --generate-notes
+
+      # Manual dry run → no release; just hand back the built AppImage as a
+      # downloadable workflow artifact so the build can be verified end to end.
+      - name: Upload AppImage artifact (dry run)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: eupub-appimage
+          path: dist/Eupub-*.AppImage
+          if-no-files-found: error
