@@ -1,0 +1,47 @@
+# Builds the Linux AppImage and publishes it to a GitHub Release when a
+# version tag (v*) is pushed. Cut a release with:
+#   npm version <x.y.z>   # edits package.json + creates the tag
+#   git push origin main --tags
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # create the release and upload the AppImage asset
+
+jobs:
+  appimage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # 24 (LTS), matching .nvmrc / package.json engines and local dev.
+          node-version: 24
+          cache: npm
+      - run: npm ci
+
+      # Guard against a tag/package.json mismatch before the multi-minute build:
+      # the tag drives the release name, package.json drives the artifact name
+      # (Eupub-${version}.AppImage), so they must agree.
+      - name: Check tag matches package.json version
+        run: |
+          pkg="v$(node -p "require('./package.json').version")"
+          if [ "$pkg" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME != package.json $pkg — bump package.json to match the tag"
+            exit 1
+          fi
+
+      # dist:linux builds the engine + lexicon, then runs electron-builder
+      # --linux AppImage. artifactName is Eupub-${version}.AppImage.
+      - run: npm run dist:linux
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/Eupub-*.AppImage \
+            --title "Eupub ${GITHUB_REF_NAME#v}" \
+            --generate-notes
