@@ -1,0 +1,164 @@
+// Eupub iOS origin spike — does localStorage survive an app relaunch when the
+// page is served from a custom scheme via WKURLSchemeHandler?
+//
+// This is the load-bearing question for the iOS port. The renderer keeps every
+// piece of user state in localStorage (reader.js: reading position, bookmarks,
+// highlights, prefs, recents). If that doesn't persist, the port has to route
+// persistence through the native bridge, which forks reader.js away from the
+// Android/Electron builds. If it does persist, the iOS shell is a direct
+// translation of MainActivity.kt and the renderer stays untouched.
+//
+// It also probes a fetch() of a sibling path, because window.eupub.readText and
+// engineSource are plain fetches against the served origin (see
+// android-bridge.js) — if fetch doesn't work on the custom scheme, the bridge
+// shim needs a different mechanism for chapter reads.
+//
+// HOW TO RUN — see README.md. Short version: new Xcode iOS App project
+// (SwiftUI), replace the generated ContentView.swift with this file, run on a
+// device or simulator, then FORCE-QUIT and relaunch. The page reports its own
+// verdict.
+
+import SwiftUI
+import WebKit
+
+// The origin under test. Both halves are load-bearing and permanent: localStorage
+// is keyed to scheme+host, so changing either one after ship orphans every
+// user's reading position, bookmarks, and highlights behind an origin nothing
+// loads any more. This is exactly the one-time data loss Cordova/Ionic apps hit
+// when they migrated file:// -> ionic://localhost. Pick it once, never touch it.
+private let SCHEME = "eupub"
+private let HOST = "localhost"
+
+struct ContentView: View {
+    var body: some View {
+        SpikeWebView().ignoresSafeArea()
+    }
+}
+
+struct SpikeWebView: UIViewRepresentable {
+    func makeUIView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.setURLSchemeHandler(SpikeSchemeHandler(), forURLScheme: SCHEME)
+
+        // The real, mundane cause behind most "localStorage doesn't persist on
+        // iOS" reports: .nonPersistent() is an in-memory store wiped on every
+        // launch. .default() is already the default, but it is stated here
+        // because it is the whole difference between pass and fail.
+        config.websiteDataStore = .default()
+
+        let webView = WKWebView(frame: .zero, configuration: config)
+
+        // The scheme handler only takes effect if the ROOT document is loaded
+        // over the custom scheme too — loading the root from file:// or https://
+        // and expecting subresources to route through the handler silently fails.
+        let url = URL(string: "\(SCHEME)://\(HOST)/index.html")!
+        webView.load(URLRequest(url: url))
+        return webView
+    }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+}
+
+/// Serves the spike page (and one probe subresource) entirely from memory. The
+/// real shell would serve the extracted book from disk here — this is the
+/// WKURLSchemeHandler analog of Android's WebViewAssetLoader + BookPathHandler.
+final class SpikeSchemeHandler: NSObject, WKURLSchemeHandler {
+    func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
+        guard let url = urlSchemeTask.request.url else { return }
+
+        let body: String
+        let mime: String
+        switch url.path {
+        case "/probe.txt":
+            body = "probe-ok"
+            mime = "text/plain"
+        default:
+            body = spikePage
+            mime = "text/html"
+        }
+
+        let data = Data(body.utf8)
+        let response = URLResponse(
+            url: url,
+            mimeType: mime,
+            expectedContentLength: data.count,
+            textEncodingName: "utf-8"
+        )
+        urlSchemeTask.didReceive(response)
+        urlSchemeTask.didReceive(data)
+        urlSchemeTask.didFinish()
+    }
+
+    func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {}
+}
+
+/// The spike page reports its own verdict, so the test needs no debugger and no
+/// reading of console logs: launch, force-quit, relaunch, read the screen.
+private let spikePage = """
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { font: 16px/1.5 -apple-system, system-ui, sans-serif; margin: 0; padding: 24px; }
+  h1 { font-size: 20px; margin: 0 0 16px; padding: 12px; border-radius: 8px; }
+  .pass    { background: #d8f5d8; color: #14532d; }
+  .fail    { background: #fadbdb; color: #7f1d1d; }
+  .pending { background: #fdf0d0; color: #78350f; }
+  pre { background: #f4f4f5; padding: 12px; border-radius: 8px; white-space: pre-wrap; font-size: 13px; }
+</style>
+<h1 id="verdict" class="pending">running…</h1>
+<pre id="detail"></pre>
+<script>
+(function () {
+  var lines = [];
+  var verdict = document.getElementById('verdict');
+  function say(k, v) { lines.push(k.padEnd(16) + v); }
+
+  // The origin the page actually got. An "null"/opaque origin here is the
+  // failure mode that would sink the custom-scheme approach outright.
+  say('origin', location.origin);
+
+  var launches = null, first = null, storageError = null;
+  try {
+    launches = parseInt(localStorage.getItem('eupub:launches') || '0', 10) + 1;
+    localStorage.setItem('eupub:launches', String(launches));
+
+    first = localStorage.getItem('eupub:first');
+    if (!first) {
+      first = new Date().toISOString();
+      localStorage.setItem('eupub:first', first);
+    }
+    say('localStorage', 'readable + writable');
+    say('launches seen', String(launches));
+    say('first seen', first);
+  } catch (e) {
+    // localStorage THROWS on an opaque origin rather than returning null.
+    storageError = String(e);
+    say('localStorage', 'THREW: ' + storageError);
+  }
+
+  // readText/engineSource are plain fetches against the served origin, so prove
+  // fetch works on this scheme before the bridge design depends on it.
+  fetch('/probe.txt')
+    .then(function (r) { return r.ok ? r.text() : Promise.reject('HTTP ' + r.status); })
+    .then(function (t) { say('fetch subresource', t === 'probe-ok' ? 'OK' : 'unexpected: ' + t); })
+    .catch(function (e) { say('fetch subresource', 'FAILED: ' + e); })
+    .then(render);
+
+  function render() {
+    document.getElementById('detail').textContent = lines.join('\\n');
+
+    if (storageError) {
+      verdict.className = 'fail';
+      verdict.textContent = 'FAIL — localStorage unavailable on this origin';
+    } else if (launches >= 2) {
+      verdict.className = 'pass';
+      verdict.textContent = 'PASS — state survived ' + launches + ' launches';
+    } else {
+      verdict.className = 'pending';
+      verdict.textContent = 'FIRST RUN — now force-quit the app and relaunch';
+    }
+  }
+})();
+</script>
+"""

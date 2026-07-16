@@ -1,0 +1,4 @@
+# Shell scripts must check out with LF even on Windows clones: a CRLF shebang
+# makes the kernel look for an interpreter named "bash\r", and the script dies
+# with "bad interpreter: /usr/bin/env bash^M" on macOS/Linux.
+*.sh text eol=lf
