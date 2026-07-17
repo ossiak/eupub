@@ -63,15 +63,31 @@ const ADB = findAdb();
 const adb = (...a) => execFileSync(ADB, a, { encoding: 'utf8' }).replace(/\r/g, '');
 
 function device() {
-  const lines = adb('devices').split('\n').slice(1).filter((l) => /\tdevice$/.test(l));
-  if (!lines.length) {
+  const serials = adb('devices')
+    .split('\n')
+    .slice(1)
+    .filter((l) => /\tdevice$/.test(l))
+    .map((l) => l.split('\t')[0]);
+
+  if (!serials.length) {
     throw new Error(
-      'no device. Plug one in, or for wireless debugging:\n' +
+      'no device. Plug one in over USB, or for wireless debugging:\n' +
         '  adb mdns services            # find its _adb-tls-connect._tcp ip:port\n' +
         '  adb connect <ip>:<port>      # (pair first if this host is new)'
     );
   }
-  return lines[0].split('\t')[0];
+
+  // One phone can appear three times at once — USB serial, ip:port, and the mDNS
+  // service name — so picking the first line is a coin toss. Prefer USB: it is
+  // the stable transport, and it is the one that survives the reboot an install
+  // sometimes needs. (A wireless entry has a ':' or the _tcp suffix; a USB serial
+  // has neither.)
+  const usb = serials.filter((s) => !s.includes(':') && !s.includes('._tcp'));
+  const pick = usb[0] ?? serials[0];
+  if (serials.length > 1) {
+    console.error(`# ${serials.length} transports (${serials.join(', ')}) — using ${pick}`);
+  }
+  return pick;
 }
 
 /**
