@@ -13,10 +13,8 @@
 // android-bridge.js) — if fetch doesn't work on the custom scheme, the bridge
 // shim needs a different mechanism for chapter reads.
 //
-// HOW TO RUN — see README.md. Short version: new Xcode iOS App project
-// (SwiftUI), replace the generated ContentView.swift with this file, run on a
-// device or simulator, then FORCE-QUIT and relaunch. The page reports its own
-// verdict.
+// HOW TO RUN — see README.md. Short version: ./run.sh, and read the verdict it
+// prints. No Xcode UI, no signing.
 
 import SwiftUI
 import WebKit
@@ -46,6 +44,14 @@ struct SpikeWebView: UIViewRepresentable {
         // because it is the whole difference between pass and fail.
         config.websiteDataStore = .default()
 
+        // Lets the page hand its verdict back to native so run.sh can print it,
+        // instead of a human squinting at a screenshot. This is also the exact
+        // mechanism the real bridge will use for window.eupub, so a working
+        // round-trip here is a first proof of half the bridge design.
+        let controller = WKUserContentController()
+        controller.add(VerdictHandler(), name: "verdict")
+        config.userContentController = controller
+
         let webView = WKWebView(frame: .zero, configuration: config)
 
         // The scheme handler only takes effect if the ROOT document is loaded
@@ -57,6 +63,30 @@ struct SpikeWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {}
+}
+
+/// Receives the page's verdict and gets it somewhere a script can read.
+final class VerdictHandler: NSObject, WKScriptMessageHandler {
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) {
+        guard let text = message.body as? String else { return }
+
+        // Visible under `xcrun simctl launch --console`.
+        print(text)
+
+        // ...but --console blocks until the app exits, and this app never does.
+        // So also drop it in the container, which run.sh reads after the fact
+        // without attaching to stdout at all.
+        if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            try? text.write(
+                to: docs.appendingPathComponent("verdict.txt"),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+    }
 }
 
 /// Serves the spike page (and one probe subresource) entirely from memory. The
@@ -92,8 +122,7 @@ final class SpikeSchemeHandler: NSObject, WKURLSchemeHandler {
     func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {}
 }
 
-/// The spike page reports its own verdict, so the test needs no debugger and no
-/// reading of console logs: launch, force-quit, relaunch, read the screen.
+/// The page reports its verdict twice: on screen, and back to native for run.sh.
 private let spikePage = """
 <!doctype html>
 <meta charset="utf-8">
@@ -114,7 +143,7 @@ private let spikePage = """
   var verdict = document.getElementById('verdict');
   function say(k, v) { lines.push(k.padEnd(16) + v); }
 
-  // The origin the page actually got. An "null"/opaque origin here is the
+  // The origin the page actually got. A "null"/opaque origin here is the
   // failure mode that would sink the custom-scheme approach outright.
   say('origin', location.origin);
 
@@ -146,17 +175,25 @@ private let spikePage = """
     .then(render);
 
   function render() {
-    document.getElementById('detail').textContent = lines.join('\\n');
-
+    var headline;
     if (storageError) {
       verdict.className = 'fail';
-      verdict.textContent = 'FAIL — localStorage unavailable on this origin';
+      headline = 'FAIL — localStorage unavailable on this origin';
     } else if (launches >= 2) {
       verdict.className = 'pass';
-      verdict.textContent = 'PASS — state survived ' + launches + ' launches';
+      headline = 'PASS — state survived ' + launches + ' launches';
     } else {
       verdict.className = 'pending';
-      verdict.textContent = 'FIRST RUN — now force-quit the app and relaunch';
+      headline = 'FIRST RUN — now force-quit the app and relaunch';
+    }
+    verdict.textContent = headline;
+    document.getElementById('detail').textContent = lines.join('\\n');
+
+    // Hand the whole report to native so run.sh can print it.
+    try {
+      window.webkit.messageHandlers.verdict.postMessage(headline + '\\n' + lines.join('\\n'));
+    } catch (e) {
+      /* no handler (e.g. opened in plain Safari) — the on-screen copy stands */
     }
   }
 })();

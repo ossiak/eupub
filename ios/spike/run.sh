@@ -71,24 +71,44 @@ xcrun simctl install "$UDID" "$APP"
 
 # --- the actual test -------------------------------------------------------
 
+# The app writes its verdict here (see VerdictHandler in ContentView.swift).
+CONTAINER=$(xcrun simctl get_app_container "$UDID" "$BUNDLE_ID" data)
+VERDICT="$CONTAINER/Documents/verdict.txt"
+
 echo
 echo "==> launch 1 — writes localStorage, expect FIRST RUN"
 xcrun simctl launch "$UDID" "$BUNDLE_ID" >/dev/null
 sleep 3
-xcrun simctl io "$UDID" screenshot launch1.png >/dev/null 2>&1
+xcrun simctl io "$UDID" screenshot launch1.png
 
 echo "==> killing the process (the part that matters)"
 xcrun simctl terminate "$UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
 sleep 1
 
+# Clear it so what we read back is unambiguously from launch 2, not a stale
+# leftover from launch 1 or an earlier run.
+rm -f "$VERDICT"
+
 echo "==> launch 2 — fresh process, expect PASS"
 xcrun simctl launch "$UDID" "$BUNDLE_ID" >/dev/null
 sleep 3
-xcrun simctl io "$UDID" screenshot launch2.png >/dev/null 2>&1
+xcrun simctl io "$UDID" screenshot launch2.png
+
+# --- the answer ------------------------------------------------------------
 
 echo
-echo "Done. Read launch2.png (or just look at the Simulator window):"
-echo "  PASS — state survived 2 launches   -> custom scheme persists; use eupub://localhost"
-echo "  FAIL — localStorage unavailable    -> opaque origin; fall back to a loopback server"
+echo "=============================================================="
+if [ -f "$VERDICT" ]; then
+  cat "$VERDICT"
+else
+  echo "NO VERDICT — the app never posted one."
+  echo "The page didn't reach its message handler: a JS error, a load failure,"
+  echo "or the scheme handler never served the root document. Check the"
+  echo "Simulator window and launch2.png, and see README.md > Troubleshooting."
+fi
+echo "=============================================================="
 echo
-echo "Re-run to watch the launch counter keep climbing."
+echo "  PASS -> custom scheme persists; use eupub://localhost, no loopback server"
+echo "  FAIL -> opaque origin; persistence must go through the native bridge"
+echo
+echo "Screenshots: launch1.png, launch2.png. Re-run to watch the counter climb."

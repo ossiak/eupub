@@ -16,6 +16,28 @@ whether state persists on that origin.
   `reader.js` per platform, or the app needs a loopback HTTP server to get a real
   `http://127.0.0.1:PORT` origin.
 
+## Status — the verdict is still unobserved
+
+**As of this commit, nobody has read the result yet.** The toolchain is proven:
+`run.sh` has been run once on a Mac and got as far as `Install Succeeded`, so
+XcodeGen, the headless build, and the simulator all work. But that run produced
+no screenshots and no visible Simulator window, and the verdict was never seen.
+
+Two candidate causes, both addressed here:
+
+1. The script suppressed stderr on its `simctl io` calls, so a screenshot failure
+   would have been **silent**. Fixed — those errors now print.
+2. The result only existed on screen and in a PNG. Fixed — the page now posts its
+   report back through a `WKScriptMessageHandler` and `run.sh` prints it, so the
+   answer lands in the terminal next to everything else.
+
+**Next step: run `./run.sh` and read the block it prints.** If it says `NO
+VERDICT`, see Troubleshooting — that path is now instrumented rather than silent.
+
+The message-handler round-trip is not just for this readout, incidentally: it's
+the same mechanism the real bridge uses for `window.eupub`, so a working verdict
+is also a first proof of half the bridge design.
+
 ## Run it
 
 One prerequisite that VSCode can't get around: **full Xcode**, from the App Store.
@@ -26,35 +48,65 @@ you never need to open it — everything below is terminal-driven.
 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer   # once, if needed
 brew install xcodegen                                             # once
 
-cd Eupub/ios/spike
-chmod +x run.sh   # the repo is authored on Windows, so the exec bit may not survive
+cd ios/spike        # from the repo root
 ./run.sh
 ```
 
 `run.sh` generates the Xcode project, builds it, boots a simulator, launches the
-app, **kills the process**, relaunches it, and screenshots both runs to
-`launch1.png` / `launch2.png`. The kill is the whole point — it proves the data
-outlives the process rather than just the page.
+app, **kills the process**, relaunches it, and **prints the verdict to your
+terminal**. The kill is the whole point — it proves the data outlives the
+process rather than just the page.
 
 No Apple Developer account and no signing are needed; simulator builds skip both.
 
 ## Read the result
 
-The page reports its own verdict, so there's no debugger or console to read —
-look at the Simulator window or open `launch2.png`.
+`run.sh` ends by printing the report the app posted back, e.g.
 
-| Screen | Meaning |
-| --- | --- |
-| `FIRST RUN — now force-quit and relaunch` | expected on launch 1 only |
-| `PASS — state survived N launches` | custom scheme persists; use `eupub://localhost` |
-| `FAIL — localStorage unavailable on this origin` | opaque origin; fall back to a loopback server |
+```
+==============================================================
+PASS — state survived 2 launches
+origin          eupub://localhost
+localStorage    readable + writable
+launches seen   2
+first seen      2026-07-16T14:22:31.004Z
+fetch subresource OK
+==============================================================
+```
 
-The detail block also shows `location.origin` (confirm it reads
-`eupub://localhost`, not `null`) and whether `fetch('/probe.txt')` works —
-`readText` and `engineSource` are plain fetches against the served origin, so
-that has to work before the bridge design leans on it.
+Three things matter, and all three are in that block:
 
-Re-run to watch the launch counter keep climbing.
+| Line | What you want | Why |
+| --- | --- | --- |
+| headline | `PASS — state survived N launches` | the answer |
+| `origin` | `eupub://localhost`, **not** `null` | an opaque origin sinks the approach — `localStorage` *throws* there rather than returning null |
+| `fetch subresource` | `OK` | `readText` / `engineSource` are plain fetches against the served origin |
+
+`FIRST RUN` in that block means launch 2 didn't see launch 1's data — that is a
+**fail**, not a pending state; the script always runs twice.
+
+Screenshots of both launches also land in `launch1.png` / `launch2.png`, and the
+Simulator window shows the same thing on screen. Re-run to watch the counter
+climb — extra evidence, and harmless.
+
+## Troubleshooting
+
+**`NO VERDICT — the app never posted one`.** The page didn't reach its message
+handler. Either JS threw before `render()`, the root document never loaded, or
+the scheme handler didn't serve it. Look at `launch2.png` and the Simulator
+window; if the page is blank, the scheme handler is the suspect.
+
+**No Simulator window.** `open -a Simulator` may put it on another Space rather
+than pulling it forward — check Mission Control or the Dock. `xcrun simctl list
+devices booted` confirms whether a device is actually running.
+
+**No screenshots.** `simctl io` errors are no longer suppressed, so the failure
+reason prints. This previously failed *silently* — if you're on an older checkout
+where the calls end in `>/dev/null 2>&1`, that's why you got nothing.
+
+**`bad interpreter: bash^M`.** The repo is authored on Windows. `.gitattributes`
+pins `*.sh` to LF, so a normal clone is fine — but a copied-by-hand file may need
+`chmod +x run.sh` and its line endings fixed.
 
 ### On a real device
 
