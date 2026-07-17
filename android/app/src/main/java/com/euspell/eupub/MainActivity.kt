@@ -58,11 +58,16 @@ class MainActivity : ComponentActivity() {
             }
             io.execute {
                 try {
-                    val tmp = File(cacheDir, "picked-" + System.currentTimeMillis() + ".epub")
-                    contentResolver.openInputStream(uri)!!.use { input ->
-                        FileOutputStream(tmp).use { input.copyTo(it) }
+                    val name = displayName(uri)
+                    if (isPdf(uri, name)) {
+                        resolve(id, true, importPdf(uri, name).toString())
+                    } else {
+                        val tmp = File(cacheDir, "picked-" + System.currentTimeMillis() + ".epub")
+                        contentResolver.openInputStream(uri)!!.use { input ->
+                            FileOutputStream(tmp).use { input.copyTo(it) }
+                        }
+                        resolve(id, true, extractEpub(tmp).toString())
                     }
-                    resolve(id, true, extractEpub(tmp).toString())
                 } catch (e: Exception) {
                     resolve(id, false, errJson(e))
                 }
@@ -77,6 +82,7 @@ class MainActivity : ComponentActivity() {
             .setDomain("eupub.local")
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .addPathHandler("/book/", BookPathHandler())
+            .addPathHandler("/pdf/", PdfPathHandler())
             .build()
 
         webView = WebView(this)
@@ -210,12 +216,73 @@ class MainActivity : ComponentActivity() {
         val opfPath = File(rootDir, rel)
         currentBookDir = rootDir
         return JSONObject().apply {
+            put("kind", "epub")
             put("sourcePath", epub.absolutePath.replace('\\', '/'))
             put("rootDir", rootDir.absolutePath.replace('\\', '/'))
             put("opfDir", (opfPath.parentFile ?: rootDir).absolutePath.replace('\\', '/'))
             put("opfPath", opfPath.absolutePath.replace('\\', '/'))
             put("opfXml", opfPath.readText())
         }
+    }
+
+    // --- PDF import ---------------------------------------------------------
+    // A PDF is not extracted like an EPUB; it is copied verbatim into
+    // filesDir/pdfs and served over https://eupub.local/pdf/<name>, where it
+    // clears both the viewer's http/https-only ?file= check and its
+    // connect-src 'self' CSP. The renderer opens it in the embedded PDF viewer.
+
+    private fun displayName(uri: Uri): String {
+        try {
+            contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { c -> if (c.moveToFirst()) c.getString(0)?.let { return it } }
+        } catch (_: Exception) { /* fall through to the uri's own last segment */ }
+        return uri.lastPathSegment ?: "document"
+    }
+
+    private fun isPdf(uri: Uri, name: String): Boolean =
+        name.lowercase().endsWith(".pdf") ||
+            (try { contentResolver.getType(uri) } catch (_: Exception) { null }) == "application/pdf"
+
+    private fun importPdf(uri: Uri, name: String): JSONObject {
+        val dir = File(filesDir, "pdfs").apply { mkdirs() }
+        // Sanitize to a URL- and path-safe name, so the served /pdf/<name> needs
+        // no encoding and cannot escape the pdfs dir.
+        var safe = name.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        if (!safe.lowercase().endsWith(".pdf")) safe += ".pdf"
+        val dest = File(dir, safe)
+        contentResolver.openInputStream(uri)!!.use { input ->
+            FileOutputStream(dest).use { input.copyTo(it) }
+        }
+        return pdfDescriptor(dest)
+    }
+
+    private fun pdfDescriptor(file: File): JSONObject =
+        JSONObject().apply {
+            put("kind", "pdf")
+            put("sourcePath", file.absolutePath.replace('\\', '/'))
+            put("url", "https://eupub.local/pdf/" + file.name) // name is already safe
+            put("title", file.name.removeSuffix(".pdf"))
+        }
+
+    // Serves imported PDFs over https://eupub.local/pdf/... — separate from /book/
+    // so it can hardcode application/pdf and stay under the AssetLoader's virtual
+    // origin (the reason a picked content:// PDF becomes fetchable at all).
+    private inner class PdfPathHandler : WebViewAssetLoader.PathHandler {
+        override fun handle(path: String): WebResourceResponse {
+            val dir = File(filesDir, "pdfs")
+            return try {
+                val file = File(dir, path)
+                if (file.canonicalPath.startsWith(dir.canonicalPath) && file.isFile) {
+                    WebResourceResponse("application/pdf", null, FileInputStream(file))
+                } else notFound()
+            } catch (e: Exception) {
+                notFound()
+            }
+        }
+
+        private fun notFound(): WebResourceResponse =
+            WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
+                .apply { setStatusCodeAndReasonPhrase(404, "Not Found") }
     }
 
     // Serves the current book's files over https://eupub.local/book/...
@@ -265,8 +332,11 @@ class MainActivity : ComponentActivity() {
                 try {
                     val path = JSONArray(argsJson).getString(0)
                     val f = File(path)
-                    if (f.isFile) resolve(id, true, extractEpub(f).toString())
-                    else resolve(id, true, "null")
+                    when {
+                        !f.isFile -> resolve(id, true, "null")
+                        path.lowercase().endsWith(".pdf") -> resolve(id, true, pdfDescriptor(f).toString())
+                        else -> resolve(id, true, extractEpub(f).toString())
+                    }
                 } catch (e: Exception) {
                     resolve(id, false, errJson(e))
                 }
@@ -276,7 +346,7 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface
         fun pickEpub(id: Int, argsJson: String) {
             pendingPickId = id
-            runOnUiThread { picker.launch(arrayOf("application/epub+zip", "text/plain", "*/*")) }
+            runOnUiThread { picker.launch(arrayOf("application/epub+zip", "application/pdf", "text/plain", "*/*")) }
         }
 
         @JavascriptInterface

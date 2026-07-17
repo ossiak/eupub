@@ -28,6 +28,7 @@
     euspell: $('euspell-checkbox'),
     bookTitle: $('book-title'),
     iframe: $('chapter'),
+    pdf: $('pdf'),
     welcome: $('welcome'),
     statusLeft: $('status-left'),
     statusRight: $('status-right'),
@@ -241,6 +242,7 @@
 
     window.addEventListener('message', onChapterMessage);
     window.addEventListener('keydown', (e) => {
+      if (state.pdf) return; // search and page nav are chapter-only
       // Ctrl/Cmd+F opens (or re-focuses) the book search from anywhere, incl.
       // while the input is already focused. F3 / Shift+F3 walk the hits.
       if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
@@ -288,6 +290,17 @@
   }
 
   async function loadBook(book) {
+    hideSelectionPopup();
+    // A PDF is a fixed-layout document, not a spine of chapters — it opens in the
+    // embedded PDF viewer rather than through EupubModel.
+    if (book && book.kind === 'pdf') return loadPdf(book);
+
+    // Leaving PDF mode (or never in it): restore the chapter view.
+    state.pdf = false;
+    els.pdf.classList.add('hidden');
+    els.pdf.removeAttribute('src'); // stop the viewer and free the frame
+    els.euspell.disabled = false;
+
     state.book = book;
     state.model = await window.EupubModel.parseAsync(book);
     for (const s of state.model.spine) s.fileURL = window.eupub.fileURL(s.absPath);
@@ -321,6 +334,34 @@
     go(start, { restore: state.currentLocator });
 
     computeCharCounts(book); // async; fills the progress %
+  }
+
+  // Open a PDF in the embedded viewer. The native host has already copied it into
+  // app storage and returned a served https URL (book.url); we point the iframe's
+  // ?file= at it. The viewer reforms and renders on its own. Toolbar controls that
+  // don't apply to a PDF yet are disabled (enableControls(false) leaves the Open
+  // menu), and per-book persistence early-returns while state.pdf is set. The
+  // reforming already happened in-viewer, so there is no chapter model here.
+  function loadPdf(book) {
+    state.pdf = true;
+    state.book = book;
+    state.model = null;
+    els.bookTitle.textContent = book.title;
+    document.title = `${book.title} — Eupub`;
+    pushRecent(book.sourcePath, book.title);
+
+    enableControls(false);
+    els.euspell.disabled = true;
+    els.sidebar.classList.add('hidden');
+    els.panelToc.replaceChildren();
+    els.panelBookmarks.replaceChildren();
+    els.panelHighlights.replaceChildren();
+    els.progress.textContent = '';
+
+    els.welcome.classList.add('hidden');
+    els.iframe.classList.add('hidden');
+    els.pdf.src = `/assets/pdf/viewer.html?file=${encodeURIComponent(book.url)}`;
+    els.pdf.classList.remove('hidden');
   }
 
   // Reads every spine document once and records its visible-text length, so
@@ -369,7 +410,7 @@
   // Re-render the current chapter while keeping the reader's place (used after a
   // font/theme/euspell/view change).
   function reRenderKeepingPlace() {
-    if (state.index < 0) return;
+    if (state.pdf || state.index < 0) return;
     renderChapter(state.index, { restore: state.currentLocator });
   }
 
@@ -1138,14 +1179,18 @@
 
   // --- persistence ----------------------------------------------------
 
+  // A PDF has no bookKey and no per-position/bookmark/highlight state yet, so
+  // these no-op in PDF mode rather than writing under an undefined key.
   function savePosition() {
-    if (!state.book) return;
+    if (!state.book || state.pdf) return;
     localStorage.setItem(posKey(state.bookKey), JSON.stringify({ index: state.index, locator: state.currentLocator }));
   }
   function saveBookmarks() {
+    if (state.pdf) return;
     localStorage.setItem(bmKey(state.bookKey), JSON.stringify(state.bookmarks));
   }
   function saveHighlights() {
+    if (state.pdf) return;
     localStorage.setItem(hlKey(state.bookKey), JSON.stringify(state.highlights));
   }
   // Saved state for the current book: the stable identifier key first, then the

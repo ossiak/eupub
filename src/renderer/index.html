@@ -82,6 +82,11 @@
           PDF viewer converts each chapter — reused as-is, nothing re-implemented.</p>
       </div>
       <iframe id="chapter" class="chapter hidden" sandbox="allow-same-origin allow-scripts"></iframe>
+      <!-- PDF viewer, shown in place of #chapter when a PDF is opened. Not
+           sandboxed (unlike #chapter, which isolates untrusted EPUB markup):
+           this is our own first-party page, and it needs a plain same-origin
+           frame so the bridge, its module script, and the PDF.js worker run. -->
+      <iframe id="pdf" class="pdf hidden"></iframe>
       <div id="selection-popup" class="selection-popup hidden">
         <button id="hl-add" class="popup-btn">Highlight</button>
       </div>

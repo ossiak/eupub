@@ -318,6 +318,15 @@ body.immersive #statusbar { display: none; }
 }
 .chapter.hidden { display: none; }
 
+/* The PDF viewer iframe fills the reader area exactly like a chapter. It scrolls
+   internally (its own #pages), and its background is the viewer's own dark mat. */
+.pdf {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+}
+.pdf.hidden { display: none; }
+
 .welcome {
   margin: auto;
   max-width: 460px;
