@@ -169,6 +169,21 @@
     });
   }
 
+  // --- open-from-OS (the preload.js `onOpenFile` half) ------------------------
+  // A PDF opened from another app (tap in a file manager, or Share → Eupub) is
+  // imported natively, then the host calls window.__eupubOpenFile(path) to hand
+  // the reader its internal path — the Android analog of the Electron
+  // 'open-file' IPC. The reader registers a handler via onOpenFile; if the host
+  // delivers before that (cold-start timing), the path is buffered and replayed
+  // on registration.
+
+  var openCb = null;
+  var bufferedOpen = null;
+  root.__eupubOpenFile = function (path) {
+    if (openCb) openCb(path);
+    else bufferedOpen = path;
+  };
+
   // --- public surface (matches preload.js) -----------------------------------
 
   root.eupub = {
@@ -178,6 +193,10 @@
     readText: function (p) { return fetchText(fileURL(p)); },
     lexiconSubset: function (words) { return nativeCall('lexiconSubset', [words]); },
     openExternal: function (href) { return nativeCall('openExternal', [href]); },
+    onOpenFile: function (cb) {
+      openCb = cb;
+      if (bufferedOpen != null) { var p = bufferedOpen; bufferedOpen = null; cb(p); }
+    },
     join: function () { return joinParts([].slice.call(arguments)); },
     dirname: dirname,
     basename: basename,

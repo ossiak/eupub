@@ -46,6 +46,13 @@ class MainActivity : ComponentActivity() {
     private var seeded = false
     private var pendingPickId = -1
 
+    // Open-from-OS state (mirrors main.js's pendingOpen/deliverOpen): a PDF handed
+    // in by an intent is imported off-thread, then delivered to the reader once the
+    // page has loaded. All three are touched only on the UI thread.
+    private var pageLoaded = false
+    private var pendingOpen: String? = null
+    private var intentOpen = false
+
     // SAF picker for pickEpub(): resolves the pending promise with the opened book.
     private val picker =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
@@ -106,6 +113,13 @@ class MainActivity : ComponentActivity() {
             ): WebResourceResponse? = assetLoader.shouldInterceptRequest(request.url)
 
             override fun onPageFinished(view: WebView, url: String) {
+                // The analog of Electron's did-finish-load: flush a book that an
+                // intent imported while the page was still loading.
+                pageLoaded = true
+                pendingOpen?.let { p ->
+                    pendingOpen = null
+                    webView.evaluateJavascript("window.__eupubOpenFile(${JSONObject.quote(p)});", null)
+                }
                 maybeSeedSample()
             }
         }
@@ -121,6 +135,47 @@ class MainActivity : ComponentActivity() {
 
         copySampleIfNeeded()
         webView.loadUrl("https://eupub.local/assets/reader/index.html")
+        handleIntent(intent) // a PDF this activity was launched to open
+    }
+
+    // Warm start: a VIEW/SEND intent arriving while the activity is already up
+    // (singleTask). The page is loaded, so the imported book delivers immediately.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    // The URI a PDF intent carries: VIEW puts it in the data, SEND in EXTRA_STREAM.
+    @Suppress("DEPRECATION")
+    private fun uriFromIntent(intent: Intent?): Uri? = when (intent?.action) {
+        Intent.ACTION_VIEW -> intent.data
+        Intent.ACTION_SEND -> intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri
+        else -> null
+    }
+
+    // Import a PDF handed in by the OS and hand the reader its internal path. The
+    // copy runs off the UI thread; delivery is buffered until the page has loaded.
+    private fun handleIntent(intent: Intent?) {
+        val uri = uriFromIntent(intent) ?: return
+        intentOpen = true // don't seed the sample over an intent-opened book
+        io.execute {
+            try {
+                deliverOpen(importPdf(uri, displayName(uri)).getString("sourcePath"))
+            } catch (e: Exception) {
+                android.util.Log.w("Eupub", "open-with import failed", e)
+            }
+        }
+    }
+
+    private fun deliverOpen(path: String) {
+        runOnUiThread {
+            if (pageLoaded && ::webView.isInitialized) {
+                webView.evaluateJavascript("window.__eupubOpenFile(${JSONObject.quote(path)});", null)
+            } else {
+                pendingOpen = path
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -132,7 +187,7 @@ class MainActivity : ComponentActivity() {
     // On first launch, seed the bundled sample book so something renders; after
     // that the last-book pointer exists and the reader reopens it on its own.
     private fun maybeSeedSample() {
-        if (seeded) return
+        if (seeded || intentOpen) return
         webView.evaluateJavascript("localStorage.getItem('eupub:last')") { v ->
             if (!seeded && (v == null || v == "null")) {
                 seeded = true

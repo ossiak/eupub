@@ -116,6 +116,23 @@ function makeFramePair() {
   return { top, child };
 }
 
+test('onOpenFile delivers an OS-opened path, buffering until a handler registers', () => {
+  // Deliver-before-register (cold-start intent): the path is buffered and
+  // replayed when the reader registers its handler.
+  const early = makeWorld();
+  const seenEarly = [];
+  early.window.__eupubOpenFile('/data/user/0/app/files/pdfs/a.pdf');
+  early.window.eupub.onOpenFile((p) => seenEarly.push(p));
+  assert.deepEqual(seenEarly, ['/data/user/0/app/files/pdfs/a.pdf']);
+
+  // Register-before-deliver (warm start): the handler fires on delivery.
+  const late = makeWorld();
+  const seenLate = [];
+  late.window.eupub.onOpenFile((p) => seenLate.push(p));
+  late.window.__eupubOpenFile('/data/user/0/app/files/pdfs/b.pdf');
+  assert.deepEqual(seenLate, ['/data/user/0/app/files/pdfs/b.pdf']);
+});
+
 test('a child frame relays native calls through the top frame', async () => {
   const { top, child } = makeFramePair();
   const p = child.eupub.lexiconSubset(['the', 'people']);
