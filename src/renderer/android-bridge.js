@@ -34,6 +34,10 @@
   var seq = 0;
 
   // The host settles a pending call: ok=true → resolve(value), else reject.
+  // The Kotlin host settles calls with webView.evaluateJavascript(...), which
+  // ALWAYS runs in the top frame — so this only ever fires there. A child frame
+  // (e.g. the PDF viewer embedded in the reader) can't be resolved directly; it
+  // relays through the top frame instead (see below).
   root.__eupubResolve = function (id, ok, json) {
     var p = pending.get(id);
     if (!p) return;
@@ -45,7 +49,8 @@
     else p.reject(new Error(value && value.message ? value.message : String(value)));
   };
 
-  function nativeCall(method, args) {
+  // A real native call, valid only in the top frame (where __eupubResolve fires).
+  function directCall(method, args) {
     return new Promise(function (resolve, reject) {
       var id = ++seq;
       pending.set(id, { resolve: resolve, reject: reject });
@@ -57,6 +62,66 @@
         reject(e);
       }
     });
+  }
+
+  // --- cross-frame relay -----------------------------------------------------
+  // The PDF viewer runs both standalone (its own top-level page) and embedded in
+  // the reader as an iframe. Native can only settle calls in the top frame, so a
+  // child frame's nativeCall would hang forever. Instead a child posts each call
+  // to the top frame, which makes the real native call and posts the result back.
+  // All frames are the one first-party origin, so messages are gated on it.
+
+  // A frame is a child only when it has a distinct top; a missing `top` (the
+  // node test's mock window, or any non-frame host) counts as the top frame, so
+  // existing direct-call behaviour is unchanged there.
+  var inChildFrame = !!root.top && root.top !== root;
+  var relayPending = new Map();
+  var relaySeq = 0;
+
+  if (typeof root.addEventListener === 'function') {
+    if (inChildFrame) {
+      root.addEventListener('message', function (e) {
+        if (e.origin !== ORIGIN) return;
+        var d = e.data;
+        if (!d || !d.__eupubReply) return;
+        var p = relayPending.get(d.callId);
+        if (!p) return;
+        relayPending.delete(d.callId);
+        if (d.ok) p.resolve(d.value);
+        else p.reject(new Error(d.error || 'bridge error'));
+      });
+    } else {
+      // Top frame: service native calls delegated by child frames.
+      root.addEventListener('message', function (e) {
+        if (e.origin !== ORIGIN) return;
+        var d = e.data;
+        if (!d || !d.__eupubCall) return;
+        var src = e.source;
+        directCall(d.method, d.args).then(
+          function (value) { src.postMessage({ __eupubReply: true, callId: d.callId, ok: true, value: value }, ORIGIN); },
+          function (err) {
+            src.postMessage(
+              { __eupubReply: true, callId: d.callId, ok: false, error: err && err.message ? err.message : String(err) },
+              ORIGIN
+            );
+          }
+        );
+      });
+    }
+  }
+
+  function relayCall(method, args) {
+    return new Promise(function (resolve, reject) {
+      var callId = ++relaySeq;
+      relayPending.set(callId, { resolve: resolve, reject: reject });
+      root.top.postMessage({ __eupubCall: true, callId: callId, method: method, args: args || [] }, ORIGIN);
+    });
+  }
+
+  // Every native call goes through here: direct in the top frame, relayed from a
+  // child. Unchanged for callers (pickEpub/openPath/lexiconSubset/openExternal).
+  function nativeCall(method, args) {
+    return inChildFrame ? relayCall(method, args) : directCall(method, args);
   }
 
   // --- POSIX path helpers ----------------------------------------------------
