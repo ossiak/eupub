@@ -7,6 +7,7 @@
 //   node devtools.mjs --url <url>                      # navigate, then probe
 //   node devtools.mjs --eval "location.href"           # run an expression
 //   node devtools.mjs --url <url> --net                # + the network table
+//   node devtools.mjs --url <pdf> --sweep              # scroll it all, watch canvas memory
 //
 // e.g. the PDF viewer (its ?file= must be ABSOLUTE — isAllowedViewerUrl does
 // new URL(u) with no base, so a relative path is rejected):
@@ -34,6 +35,7 @@ const NAV = flag('--url');
 const EVAL = flag('--eval');
 const SETTLE = Number(flag('--settle') || (NAV ? 14000 : 1000));
 const SHOW_NET = args.includes('--net');
+const SWEEP = args.includes('--sweep');
 
 // --- adb ---------------------------------------------------------------------
 
@@ -168,7 +170,54 @@ if (NAV) {
   await new Promise((r) => setTimeout(r, SETTLE));
 }
 
-if (EVAL) {
+if (SWEEP) {
+  // Scroll a PDF end to end and watch live canvas memory. The viewer evicts
+  // canvases outside a keep window, so the numbers should PLATEAU. If they climb
+  // with scroll position, eviction is broken and a long document will eventually
+  // take the renderer down. Use with a long PDF — a short one fits entirely
+  // inside the keep window and proves nothing.
+  const stat = `(() => {
+    const cs = [...document.querySelectorAll('canvas')];
+    return JSON.stringify({
+      pages: document.querySelectorAll('.page').length,
+      live: cs.length,
+      mb: +(cs.reduce((s, c) => s + c.width * c.height * 4, 0) / 1048576).toFixed(1),
+      pct: +(scrollY / (document.body.scrollHeight - innerHeight) * 100).toFixed(0),
+    });
+  })()`;
+  const at = async (frac) => {
+    await send('Runtime.evaluate', {
+      expression: `scrollTo(0, (document.body.scrollHeight - innerHeight) * ${frac})`,
+    });
+    await new Promise((r) => setTimeout(r, 2500)); // let render + evict settle
+    const r = await send('Runtime.evaluate', { expression: stat, returnByValue: true });
+    return JSON.parse(r.result.value);
+  };
+
+  console.log('pos%   pages   liveCanvases   canvasMB');
+  const rows = [];
+  for (let i = 0; i <= 10; i++) {
+    const s = await at(i / 10);
+    rows.push(s);
+    console.log(
+      String(s.pct).padStart(4),
+      String(s.pages).padStart(7),
+      String(s.live).padStart(14),
+      String(s.mb).padStart(10)
+    );
+  }
+  const maxLive = Math.max(...rows.map((r) => r.live));
+  const maxMb = Math.max(...rows.map((r) => r.mb));
+  const pages = rows[0].pages;
+  const perPage = maxMb / Math.max(maxLive, 1);
+  console.log('');
+  console.log(`peak: ${maxLive} live canvases of ${pages} pages, ${maxMb} MB`);
+  console.log(`all ${pages} resident would be ~${Math.round(pages * perPage)} MB`);
+  // The keep window is ~3 pages either side, so a healthy plateau is well under
+  // a dozen regardless of document length.
+  console.log(maxLive <= 12 ? 'PASS canvases bounded (memory plateaus)' : 'FAIL canvases unbounded');
+  if (maxLive > 12) failures.push(`eviction not bounding canvases: ${maxLive} live`);
+} else if (EVAL) {
   const r = await send('Runtime.evaluate', {
     expression: EVAL,
     awaitPromise: true,
