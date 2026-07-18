@@ -93,3 +93,56 @@ test('concurrent native calls settle independently by id', async () => {
   assert.deepEqual(await b, { rootDir: '/r2' });
   assert.equal(await a, null);
 });
+
+// A top window + a child frame linked by postMessage, each with the shim loaded.
+// The child cannot be resolved by native directly (webView.evaluateJavascript
+// only reaches the top frame), so its calls must relay through the top.
+function makeFramePair() {
+  const ORIGIN = 'https://eupub.local';
+  const mkWin = () => ({ _h: [], addEventListener: function (t, fn) { if (t === 'message') this._h.push(fn); } });
+  const top = mkWin();
+  const child = mkWin();
+  top.top = top; // a top frame's top is itself
+  child.top = top; // the child's top is the top window
+  top.AndroidBridge = { calls: [], lexiconSubset: (id, args) => top.AndroidBridge.calls.push({ id, args: JSON.parse(args) }) };
+  // Deliver async, mirroring real postMessage; only the child ever posts to the
+  // top, so a message arriving at the top is sourced from the child.
+  const deliver = (win, source) => (data) =>
+    queueMicrotask(() => win._h.forEach((h) => h({ data, origin: ORIGIN, source })));
+  top.postMessage = deliver(top, child);
+  child.postMessage = deliver(child, top);
+  vm.runInNewContext(SHIM, { window: top, Map, Promise, JSON, encodeURIComponent, Error, String, console, queueMicrotask });
+  vm.runInNewContext(SHIM, { window: child, Map, Promise, JSON, encodeURIComponent, Error, String, console, queueMicrotask });
+  return { top, child };
+}
+
+test('onOpenFile delivers an OS-opened path, buffering until a handler registers', () => {
+  // Deliver-before-register (cold-start intent): the path is buffered and
+  // replayed when the reader registers its handler.
+  const early = makeWorld();
+  const seenEarly = [];
+  early.window.__eupubOpenFile('/data/user/0/app/files/pdfs/a.pdf');
+  early.window.eupub.onOpenFile((p) => seenEarly.push(p));
+  assert.deepEqual(seenEarly, ['/data/user/0/app/files/pdfs/a.pdf']);
+
+  // Register-before-deliver (warm start): the handler fires on delivery.
+  const late = makeWorld();
+  const seenLate = [];
+  late.window.eupub.onOpenFile((p) => seenLate.push(p));
+  late.window.__eupubOpenFile('/data/user/0/app/files/pdfs/b.pdf');
+  assert.deepEqual(seenLate, ['/data/user/0/app/files/pdfs/b.pdf']);
+});
+
+test('a child frame relays native calls through the top frame', async () => {
+  const { top, child } = makeFramePair();
+  const p = child.eupub.lexiconSubset(['the', 'people']);
+
+  // The relay reaches the top's real bridge, not the child's (the child has none).
+  await new Promise((r) => queueMicrotask(r)); // let the relay message deliver
+  assert.equal(top.AndroidBridge.calls.length, 1);
+  assert.deepEqual(top.AndroidBridge.calls[0].args, [['the', 'people']]);
+
+  // The top settles it (as native would), and the result relays back to the child.
+  top.__eupubResolve(top.AndroidBridge.calls[0].id, true, JSON.stringify([['people', { encoding: 101 }]]));
+  assert.deepEqual(await p, [['people', { encoding: 101 }]]);
+});

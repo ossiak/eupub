@@ -46,6 +46,13 @@ class MainActivity : ComponentActivity() {
     private var seeded = false
     private var pendingPickId = -1
 
+    // Open-from-OS state (mirrors main.js's pendingOpen/deliverOpen): a PDF handed
+    // in by an intent is imported off-thread, then delivered to the reader once the
+    // page has loaded. All three are touched only on the UI thread.
+    private var pageLoaded = false
+    private var pendingOpen: String? = null
+    private var intentOpen = false
+
     // SAF picker for pickEpub(): resolves the pending promise with the opened book.
     private val picker =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
@@ -58,11 +65,16 @@ class MainActivity : ComponentActivity() {
             }
             io.execute {
                 try {
-                    val tmp = File(cacheDir, "picked-" + System.currentTimeMillis() + ".epub")
-                    contentResolver.openInputStream(uri)!!.use { input ->
-                        FileOutputStream(tmp).use { input.copyTo(it) }
+                    val name = displayName(uri)
+                    if (isPdf(uri, name)) {
+                        resolve(id, true, importPdf(uri, name).toString())
+                    } else {
+                        val tmp = File(cacheDir, "picked-" + System.currentTimeMillis() + ".epub")
+                        contentResolver.openInputStream(uri)!!.use { input ->
+                            FileOutputStream(tmp).use { input.copyTo(it) }
+                        }
+                        resolve(id, true, extractEpub(tmp).toString())
                     }
-                    resolve(id, true, extractEpub(tmp).toString())
                 } catch (e: Exception) {
                     resolve(id, false, errJson(e))
                 }
@@ -77,6 +89,7 @@ class MainActivity : ComponentActivity() {
             .setDomain("eupub.local")
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .addPathHandler("/book/", BookPathHandler())
+            .addPathHandler("/pdf/", PdfPathHandler())
             .build()
 
         webView = WebView(this)
@@ -100,6 +113,13 @@ class MainActivity : ComponentActivity() {
             ): WebResourceResponse? = assetLoader.shouldInterceptRequest(request.url)
 
             override fun onPageFinished(view: WebView, url: String) {
+                // The analog of Electron's did-finish-load: flush a book that an
+                // intent imported while the page was still loading.
+                pageLoaded = true
+                pendingOpen?.let { p ->
+                    pendingOpen = null
+                    webView.evaluateJavascript("window.__eupubOpenFile(${JSONObject.quote(p)});", null)
+                }
                 maybeSeedSample()
             }
         }
@@ -115,6 +135,47 @@ class MainActivity : ComponentActivity() {
 
         copySampleIfNeeded()
         webView.loadUrl("https://eupub.local/assets/reader/index.html")
+        handleIntent(intent) // a PDF this activity was launched to open
+    }
+
+    // Warm start: a VIEW/SEND intent arriving while the activity is already up
+    // (singleTask). The page is loaded, so the imported book delivers immediately.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    // The URI a PDF intent carries: VIEW puts it in the data, SEND in EXTRA_STREAM.
+    @Suppress("DEPRECATION")
+    private fun uriFromIntent(intent: Intent?): Uri? = when (intent?.action) {
+        Intent.ACTION_VIEW -> intent.data
+        Intent.ACTION_SEND -> intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri
+        else -> null
+    }
+
+    // Import a PDF handed in by the OS and hand the reader its internal path. The
+    // copy runs off the UI thread; delivery is buffered until the page has loaded.
+    private fun handleIntent(intent: Intent?) {
+        val uri = uriFromIntent(intent) ?: return
+        intentOpen = true // don't seed the sample over an intent-opened book
+        io.execute {
+            try {
+                deliverOpen(importPdf(uri, displayName(uri)).getString("sourcePath"))
+            } catch (e: Exception) {
+                android.util.Log.w("Eupub", "open-with import failed", e)
+            }
+        }
+    }
+
+    private fun deliverOpen(path: String) {
+        runOnUiThread {
+            if (pageLoaded && ::webView.isInitialized) {
+                webView.evaluateJavascript("window.__eupubOpenFile(${JSONObject.quote(path)});", null)
+            } else {
+                pendingOpen = path
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -126,7 +187,7 @@ class MainActivity : ComponentActivity() {
     // On first launch, seed the bundled sample book so something renders; after
     // that the last-book pointer exists and the reader reopens it on its own.
     private fun maybeSeedSample() {
-        if (seeded) return
+        if (seeded || intentOpen) return
         webView.evaluateJavascript("localStorage.getItem('eupub:last')") { v ->
             if (!seeded && (v == null || v == "null")) {
                 seeded = true
@@ -210,12 +271,73 @@ class MainActivity : ComponentActivity() {
         val opfPath = File(rootDir, rel)
         currentBookDir = rootDir
         return JSONObject().apply {
+            put("kind", "epub")
             put("sourcePath", epub.absolutePath.replace('\\', '/'))
             put("rootDir", rootDir.absolutePath.replace('\\', '/'))
             put("opfDir", (opfPath.parentFile ?: rootDir).absolutePath.replace('\\', '/'))
             put("opfPath", opfPath.absolutePath.replace('\\', '/'))
             put("opfXml", opfPath.readText())
         }
+    }
+
+    // --- PDF import ---------------------------------------------------------
+    // A PDF is not extracted like an EPUB; it is copied verbatim into
+    // filesDir/pdfs and served over https://eupub.local/pdf/<name>, where it
+    // clears both the viewer's http/https-only ?file= check and its
+    // connect-src 'self' CSP. The renderer opens it in the embedded PDF viewer.
+
+    private fun displayName(uri: Uri): String {
+        try {
+            contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { c -> if (c.moveToFirst()) c.getString(0)?.let { return it } }
+        } catch (_: Exception) { /* fall through to the uri's own last segment */ }
+        return uri.lastPathSegment ?: "document"
+    }
+
+    private fun isPdf(uri: Uri, name: String): Boolean =
+        name.lowercase().endsWith(".pdf") ||
+            (try { contentResolver.getType(uri) } catch (_: Exception) { null }) == "application/pdf"
+
+    private fun importPdf(uri: Uri, name: String): JSONObject {
+        val dir = File(filesDir, "pdfs").apply { mkdirs() }
+        // Sanitize to a URL- and path-safe name, so the served /pdf/<name> needs
+        // no encoding and cannot escape the pdfs dir.
+        var safe = name.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        if (!safe.lowercase().endsWith(".pdf")) safe += ".pdf"
+        val dest = File(dir, safe)
+        contentResolver.openInputStream(uri)!!.use { input ->
+            FileOutputStream(dest).use { input.copyTo(it) }
+        }
+        return pdfDescriptor(dest)
+    }
+
+    private fun pdfDescriptor(file: File): JSONObject =
+        JSONObject().apply {
+            put("kind", "pdf")
+            put("sourcePath", file.absolutePath.replace('\\', '/'))
+            put("url", "https://eupub.local/pdf/" + file.name) // name is already safe
+            put("title", file.name.removeSuffix(".pdf"))
+        }
+
+    // Serves imported PDFs over https://eupub.local/pdf/... — separate from /book/
+    // so it can hardcode application/pdf and stay under the AssetLoader's virtual
+    // origin (the reason a picked content:// PDF becomes fetchable at all).
+    private inner class PdfPathHandler : WebViewAssetLoader.PathHandler {
+        override fun handle(path: String): WebResourceResponse {
+            val dir = File(filesDir, "pdfs")
+            return try {
+                val file = File(dir, path)
+                if (file.canonicalPath.startsWith(dir.canonicalPath) && file.isFile) {
+                    WebResourceResponse("application/pdf", null, FileInputStream(file))
+                } else notFound()
+            } catch (e: Exception) {
+                notFound()
+            }
+        }
+
+        private fun notFound(): WebResourceResponse =
+            WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
+                .apply { setStatusCodeAndReasonPhrase(404, "Not Found") }
     }
 
     // Serves the current book's files over https://eupub.local/book/...
@@ -265,8 +387,11 @@ class MainActivity : ComponentActivity() {
                 try {
                     val path = JSONArray(argsJson).getString(0)
                     val f = File(path)
-                    if (f.isFile) resolve(id, true, extractEpub(f).toString())
-                    else resolve(id, true, "null")
+                    when {
+                        !f.isFile -> resolve(id, true, "null")
+                        path.lowercase().endsWith(".pdf") -> resolve(id, true, pdfDescriptor(f).toString())
+                        else -> resolve(id, true, extractEpub(f).toString())
+                    }
                 } catch (e: Exception) {
                     resolve(id, false, errJson(e))
                 }
@@ -276,7 +401,7 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface
         fun pickEpub(id: Int, argsJson: String) {
             pendingPickId = id
-            runOnUiThread { picker.launch(arrayOf("application/epub+zip", "text/plain", "*/*")) }
+            runOnUiThread { picker.launch(arrayOf("application/epub+zip", "application/pdf", "text/plain", "*/*")) }
         }
 
         @JavascriptInterface

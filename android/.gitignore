@@ -11,3 +11,11 @@ app/src/main/assets/reader/
 app/src/main/assets/engine/
 app/src/main/assets/lexicon.db
 app/src/main/assets/sample.epub
+app/src/main/assets/pdf/
+app/src/main/assets/pdfjs/
+app/src/main/assets/*.pdf
+
+# Real-world PDFs to test against (embedded fonts, JBIG2/JPEG2000 images).
+# Drop any .pdf here and prepare-assets.mjs ships it into the APK. Personal and
+# often large — the generator for the synthetic sample is test/make-pdf.js.
+fixtures/
