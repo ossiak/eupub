@@ -160,6 +160,9 @@
   }
 
   function wireEvents() {
+    // The embedded PDF viewer's outline/position messages (PDF mode only).
+    window.addEventListener('message', handlePdfNav);
+
     // Toolbar Open is a menu: pick a file or reopen a recent one. The welcome
     // screen's Open is the bare picker (its own primary call to action).
     els.open.addEventListener('click', (e) => {
@@ -300,6 +303,7 @@
     els.pdf.classList.add('hidden');
     els.pdf.removeAttribute('src'); // stop the viewer and free the frame
     els.euspell.disabled = false;
+    document.body.classList.remove('pdf-mode');
 
     state.book = book;
     state.model = await window.EupubModel.parseAsync(book);
@@ -346,22 +350,105 @@
     state.pdf = true;
     state.book = book;
     state.model = null;
+    state.bookKey = `pdf:${book.sourcePath}`;
+    state.pdfPages = 0;
     els.bookTitle.textContent = book.title;
     document.title = `${book.title} — Eupub`;
     pushRecent(book.sourcePath, book.title);
 
+    // The viewer reports when it's laid out; restore the saved page then.
+    const saved = loadBookState(posKey, null);
+    state.pdfResume = saved && Number.isInteger(saved.page) ? saved.page : null;
+
     enableControls(false);
     els.euspell.disabled = true;
+    els.sidebarBtn.disabled = false; // the sidebar carries the TOC in PDF mode
+    document.body.classList.add('pdf-mode'); // hides the deferred (Marks/Notes/Search) tabs
+    // Force Contents active (a prior EPUB may have left another tab selected)
+    // without opening the sidebar — unlike switchTab, which reveals it.
+    for (const t of document.querySelectorAll('.tab')) t.classList.toggle('active', t.dataset.tab === 'toc');
+    for (const p of document.querySelectorAll('.panel')) p.classList.toggle('active', p.id === 'panel-toc');
     els.sidebar.classList.add('hidden');
     els.panelToc.replaceChildren();
     els.panelBookmarks.replaceChildren();
     els.panelHighlights.replaceChildren();
     els.progress.textContent = '';
+    setStatus('left', '');
+    setStatus('right', ''); // clear any lingering EPUB chapter/page indicator
 
     els.welcome.classList.add('hidden');
     els.iframe.classList.add('hidden');
     els.pdf.src = `/assets/pdf/viewer.html?file=${encodeURIComponent(book.url)}`;
     els.pdf.classList.remove('hidden');
+  }
+
+  // The PDF viewer runs in the #pdf iframe (same origin) and reports its outline
+  // and current page over postMessage; we own the sidebar TOC, the status bar,
+  // and the saved position. Registered once; ignores anything that isn't our
+  // viewer's nav message.
+  function handlePdfNav(e) {
+    if (e.origin !== location.origin || !state.pdf) return;
+    const d = e.data;
+    if (!d || typeof d.eupubPdf !== 'string' || e.source !== els.pdf.contentWindow) return;
+    if (d.eupubPdf === 'ready') {
+      state.pdfPages = d.pages || 0;
+      renderPdfToc(d.outline || []);
+      if (state.pdfResume) postGoto(state.pdfResume);
+    } else if (d.eupubPdf === 'position') {
+      state.pdfPages = d.pages || state.pdfPages;
+      // Mirror the EPUB layout: overall percent in the toolbar, granular page
+      // position in the footer.
+      els.progress.textContent = `${d.pct}%`;
+      setStatus('right', `page ${d.page + 1} of ${d.pages}`);
+      highlightPdfToc(d.page);
+      savePdfPosition(d.page);
+    }
+  }
+
+  function postGoto(page) {
+    els.pdf.contentWindow?.postMessage({ eupubPdfCmd: true, goto: page }, location.origin);
+  }
+
+  function renderPdfToc(outline) {
+    els.panelToc.innerHTML = '';
+    if (!outline.length) {
+      const p = document.createElement('p');
+      p.className = 'toc-empty';
+      p.textContent = 'No contents in this PDF.';
+      els.panelToc.appendChild(p);
+      return;
+    }
+    for (const entry of outline) {
+      const a = document.createElement('a');
+      a.textContent = entry.title;
+      // Outline depth is 0-based; the TOC CSS is 1-based (depth-2/3 indent),
+      // capped at 3 so deep nesting reuses the deepest existing style.
+      a.className = `depth-${Math.min(entry.depth + 1, 3)}`;
+      a.dataset.page = String(entry.page);
+      a.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        postGoto(entry.page);
+        closeSidebarIfSmall();
+      });
+      els.panelToc.appendChild(a);
+    }
+  }
+
+  // Mark the last TOC entry at or before the current page (its section).
+  function highlightPdfToc(page) {
+    let best = null;
+    for (const a of els.panelToc.children) {
+      if (a.dataset.page != null && Number(a.dataset.page) <= page) best = a;
+    }
+    for (const a of els.panelToc.children) a.classList.toggle('active', a === best);
+  }
+
+  let pdfPosTimer = 0;
+  function savePdfPosition(page) {
+    clearTimeout(pdfPosTimer);
+    pdfPosTimer = setTimeout(() => {
+      if (state.pdf && state.bookKey) localStorage.setItem(posKey(state.bookKey), JSON.stringify({ page }));
+    }, 800);
   }
 
   // Reads every spine document once and records its visible-text length, so
