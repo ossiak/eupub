@@ -5,13 +5,24 @@
 // (b) the bundled euspell engine source to inject into chapter iframes, and
 // (c) a couple of filesystem helpers. All EPUB parsing and rendering happens in
 // the renderer, where DOMParser and a live DOM are available.
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, protocol } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
+const { Readable } = require('node:stream');
+const crypto = require('node:crypto');
 const { openEpub: extractEpub } = require('./epub-extract');
 const { openText } = require('./text-open');
 const { integrateAppImage } = require('./linux-integrate');
+
+// The private origin the embedded PDF viewer and opened PDFs are served from —
+// the desktop analog of Android's https://eupub.local (WebViewAssetLoader).
+// A real (standard, secure) origin is what lets the viewer page fetch its
+// worker/wasm/fonts and the PDF same-origin under its CSP; file:// could not.
+// Must be registered before app ready.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+]);
 
 // Render natively on Wayland (Plasma 6's default) instead of via XWayland, which
 // blurs on fractional scaling. Harmless on X11 (auto falls back). Must be set
@@ -28,7 +39,7 @@ let win = null;
 /** @type {string | null} */
 let pendingOpen = bookPathFromArgv(process.argv, process.cwd());
 
-/** First existing .epub/.txt path in an argv array, or null. Skips flags and the
+/** First existing .epub/.pdf/.txt path in an argv array, or null. Skips flags and the
  * app/exec path so `electron .` and packaged launches both parse correctly.
  * Accepts file:// URLs (desktop launchers may pass those instead of plain
  * paths) and resolves relative paths against `cwd` — which for a forwarded
@@ -44,7 +55,7 @@ function bookPathFromArgv(argv, cwd) {
         continue; // malformed or non-local (file://host/…) URL
       }
     }
-    if (!/\.(epub|txt)$/i.test(candidate)) continue;
+    if (!/\.(epub|pdf|txt)$/i.test(candidate)) continue;
     const abs = path.resolve(cwd || process.cwd(), candidate);
     try {
       if (fs.existsSync(abs)) return abs;
@@ -116,11 +127,17 @@ function createWindow() {
     win = null;
   });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  // A new document invalidates "already delivered to this document" (a reload's
+  // init must auto-reopen normally; see the open:pending handler).
+  win.webContents.on('did-start-loading', () => {
+    deliveredThisLoad = false;
+  });
   // Deliver a pending book (launch-time CLI arg / double-clicked EPUB, or one
   // buffered by deliverOpen while the window was loading) after EVERY load —
   // a once() would strand anything buffered during a later reload.
   win.webContents.on('did-finish-load', () => {
     if (pendingOpen && win) {
+      deliveredThisLoad = true;
       win.webContents.send('open-file', pendingOpen);
       pendingOpen = null;
     }
@@ -151,6 +168,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(() => {
+    registerAppProtocol();
     createWindow();
     sweepStaleTempDirs();
     integrateAppImage();
@@ -176,21 +194,30 @@ app.on('quit', () => {
 
 // --- IPC -------------------------------------------------------------------
 
-// Whether a book handed over by the OS is still waiting to be delivered to the
-// renderer. Asked by the renderer's init() BEFORE it decides to reopen the last
-// book: an OS-opened book is about to arrive on the open-file channel, and
-// running both loads would race (the second open's cleanup deletes the first's
-// extraction dir mid-read). A path that was ALREADY flushed is covered on the
-// preload side — see hasPendingOpen in preload.js.
-ipcMain.handle('open:pending', () => pendingOpen != null);
+// Whether a book handed over by the OS is still waiting for — or was already
+// flushed to — the current document. Asked by the renderer's init() BEFORE it
+// decides to reopen the last book: an OS-opened book is (or is about to be) on
+// the open-file channel, and running both loads would race (the second open's
+// cleanup deletes the first's extraction dir mid-read).
+//
+// `deliveredThisLoad` (set by the did-finish-load flush, reset by
+// did-start-loading) makes the answer independent of IPC ordering: an invoke
+// RESPONSE can overtake an earlier webContents.send (measured — the renderer
+// processed "open:pending → false" before the open-file event it was flushed
+// after), so "pending right now" alone would race the flush. With the flag,
+// main answers true for exactly the document the delivery went to; the preload
+// buffers the delivery itself, so the renderer can rely on it arriving.
+let deliveredThisLoad = false;
+ipcMain.handle('open:pending', () => pendingOpen != null || deliveredThisLoad);
 
 // Show a file picker, then open the chosen book. Returns null if cancelled.
 ipcMain.handle('epub:pick', async () => {
   const res = await dialog.showOpenDialog(win, {
     title: 'Open book',
     filters: [
-      { name: 'Books', extensions: ['epub', 'txt'] },
+      { name: 'Books', extensions: ['epub', 'pdf', 'txt'] },
       { name: 'EPUB books', extensions: ['epub'] },
+      { name: 'PDF documents', extensions: ['pdf'] },
       { name: 'Text files', extensions: ['txt'] },
     ],
     properties: ['openFile'],
@@ -261,9 +288,81 @@ ipcMain.handle('shell:openExternal', (_e, href) => {
   }
 });
 
-// Open a book by extension — extract an EPUB (async, off the main thread), or
-// synthesize an EPUB-shaped book from a .txt — and remember its temp dir so we
-// can clean it up. Once the new book has extracted, the previous books' dirs
+// --- the app://eupub origin (embedded PDF viewer) ---------------------------
+
+// Opened PDFs, id -> absolute path. The id (not the path) appears in the served
+// URL, so the page can never address arbitrary disk paths; pruned to the
+// current book on each open (see openBook). The filename is carried in the URL
+// after the id purely so the viewer can display it.
+const pdfRegistry = new Map();
+
+/** A PDF "book" — same shape the Android host returns: no extraction, the file
+ * is served to the embedded viewer over the private origin. */
+function pdfDescriptor(filePath) {
+  const id = crypto.randomUUID();
+  pdfRegistry.set(id, filePath);
+  const name = encodeURIComponent(path.basename(filePath));
+  return {
+    kind: 'pdf',
+    sourcePath: filePath,
+    url: `app://eupub/pdf/${id}/${name}`,
+    title: path.basename(filePath).replace(/\.pdf$/i, ''),
+  };
+}
+
+const MIME = {
+  '.html': 'text/html',
+  '.css': 'text/css',
+  '.js': 'text/javascript',
+  '.mjs': 'text/javascript', // the pdf.js module worker refuses octet-stream
+  '.wasm': 'application/wasm',
+  '.pdf': 'application/pdf',
+};
+
+/** Serve app://eupub/… — the desktop analog of Android's WebViewAssetLoader:
+ *   /assets/pdf/*   the viewer page + bundle   (dist/pdf)
+ *   /assets/pdfjs/* pdf.js worker/wasm/fonts   (dist/pdfjs)
+ *   /pdf/<id>/<n>   an opened PDF, by registry id
+ * Everything else (and any path escaping its mount) is 404. */
+function registerAppProtocol() {
+  const mounts = [
+    { prefix: '/assets/pdf/', dir: path.join(__dirname, '..', 'dist', 'pdf') },
+    { prefix: '/assets/pdfjs/', dir: path.join(__dirname, '..', 'dist', 'pdfjs') },
+  ];
+  const notFound = () => new Response('', { status: 404 });
+  const fileResponse = (p, type) =>
+    new Response(Readable.toWeb(fs.createReadStream(p)), {
+      headers: { 'content-type': type || MIME[path.extname(p).toLowerCase()] || 'application/octet-stream' },
+    });
+
+  protocol.handle('app', (request) => {
+    try {
+      const url = new URL(request.url);
+      if (url.hostname !== 'eupub') return notFound();
+      const pathname = decodeURIComponent(url.pathname);
+
+      const pdfMatch = /^\/pdf\/([0-9a-f-]+)\//.exec(pathname);
+      if (pdfMatch) {
+        const p = pdfRegistry.get(pdfMatch[1]);
+        return p && fs.existsSync(p) ? fileResponse(p, 'application/pdf') : notFound();
+      }
+
+      for (const { prefix, dir } of mounts) {
+        if (!pathname.startsWith(prefix)) continue;
+        const p = path.resolve(dir, pathname.slice(prefix.length));
+        if (p !== dir && !p.startsWith(dir + path.sep)) return notFound(); // traversal guard
+        return fs.existsSync(p) && fs.statSync(p).isFile() ? fileResponse(p) : notFound();
+      }
+      return notFound();
+    } catch {
+      return notFound();
+    }
+  });
+}
+
+// Open a book by extension — serve a PDF to the embedded viewer, extract an
+// EPUB (async, off the main thread), or synthesize an EPUB-shaped book from a
+// .txt — and remember any temp dir so we can clean it up. Once the new book has extracted, the previous books' dirs
 // are unreachable from the UI, so free them now instead of letting them pile up
 // until quit. Opens are serialized: two in flight at once (a picker choice
 // racing a second-instance forward) must not interleave the extract/cleanup
@@ -271,7 +370,17 @@ ipcMain.handle('shell:openExternal', (_e, href) => {
 let openQueue = Promise.resolve();
 function openBook(filePath) {
   const run = openQueue.then(async () => {
-    const book = /\.txt$/i.test(filePath) ? openText(filePath) : await extractEpub(filePath);
+    const book = /\.pdf$/i.test(filePath)
+      ? pdfDescriptor(filePath) // no extraction — served to the viewer by id
+      : /\.txt$/i.test(filePath)
+        ? openText(filePath)
+        : await extractEpub(filePath);
+    // The previous book is unreachable from the UI now: drop its PDF
+    // registration(s) and free its extraction dir(s).
+    const keepId = book.kind === 'pdf' ? new URL(book.url).pathname.split('/')[2] : null;
+    for (const id of [...pdfRegistry.keys()]) {
+      if (id !== keepId) pdfRegistry.delete(id);
+    }
     while (tempDirs.length) {
       try {
         fs.rmSync(tempDirs.pop(), { recursive: true, force: true });
@@ -279,7 +388,7 @@ function openBook(filePath) {
         /* best effort */
       }
     }
-    tempDirs.push(book.rootDir);
+    if (book.rootDir) tempDirs.push(book.rootDir); // a PDF has none
     return book;
   });
   openQueue = run.catch(() => {}); // a failed open must not wedge the queue

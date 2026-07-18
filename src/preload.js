@@ -34,12 +34,12 @@ contextBridge.exposeInMainWorld('eupub', {
   },
 
   // True when a book handed over by the OS (launch argv / open-file event /
-  // second instance) is pending or has already arrived — init() checks this to
-  // skip the "reopen the last book" fallback so the two opens can't race.
-  // `anyOpenArrived` is read AFTER the round-trip: main→renderer IPC is FIFO,
-  // so by the time main's "no longer pending" answer arrives, any open-file it
-  // flushed earlier has been delivered here and set the flag — the check can't
-  // miss a launch-time open in either state.
+  // second instance) is pending or was delivered to this document — init()
+  // checks this to skip the "reopen the last book" fallback so the two opens
+  // can't race. The load-bearing guarantee is main-side: its answer includes
+  // "already flushed to this load", so IPC ordering doesn't matter (an invoke
+  // response CAN overtake an earlier webContents.send — measured; see the
+  // open:pending handler in main.js). `anyOpenArrived` is belt-and-braces.
   hasPendingOpen: () => ipcRenderer.invoke('open:pending').then((pending) => pending || anyOpenArrived),
 
   // Engine + filesystem.

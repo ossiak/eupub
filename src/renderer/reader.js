@@ -399,18 +399,34 @@
 
     els.welcome.classList.add('hidden');
     els.iframe.classList.add('hidden');
-    els.pdf.src = `/assets/pdf/viewer.html?file=${encodeURIComponent(book.url)}`;
+    // The viewer is served from the same private origin as the PDF itself
+    // (Android https://eupub.local — the reader's own origin there; desktop
+    // app://eupub — cross-origin to the file:// reader). Deriving it from
+    // book.url needs no platform sniffing, and pdfOrigin is what the nav
+    // messages and the bridge relay are checked/targeted against.
+    state.pdfOrigin = new URL(book.url).origin;
+    els.pdf.src = `${state.pdfOrigin}/assets/pdf/viewer.html?file=${encodeURIComponent(book.url)}`;
     els.pdf.classList.remove('hidden');
   }
 
-  // The PDF viewer runs in the #pdf iframe (same origin) and reports its outline
-  // and current page over postMessage; we own the sidebar TOC, the status bar,
-  // and the saved position. Registered once; ignores anything that isn't our
-  // viewer's nav message.
+  // The PDF viewer runs in the #pdf iframe — same origin as the reader on
+  // Android (https://eupub.local), cross-origin on the desktop (app://eupub
+  // inside the file:// reader) — and reports its outline and current page over
+  // postMessage; we own the sidebar TOC, the status bar, and the saved
+  // position. Registered once; gated on the frame (source) plus the viewer's
+  // known origin, both derived when the PDF loads.
   function handlePdfNav(e) {
-    if (e.origin !== location.origin || !state.pdf) return;
-    const d = e.data;
-    if (!d || typeof d.eupubPdf !== 'string' || e.source !== els.pdf.contentWindow) return;
+    if (!state.pdf || e.source !== els.pdf.contentWindow || e.origin !== state.pdfOrigin) return;
+    const d = e.data || {};
+    // Desktop only: the viewer page has no preload, so its bridge relays native
+    // calls here over android-bridge's wire protocol (src/desktop-pdf-bridge.js)
+    // and we service them via our own window.eupub. On Android the top frame's
+    // android-bridge services these same messages — skip to avoid doubling.
+    if (d.__eupubCall && !window.AndroidBridge) {
+      serviceViewerCall(d);
+      return;
+    }
+    if (typeof d.eupubPdf !== 'string') return;
     if (d.eupubPdf === 'ready') {
       state.pdfPages = d.pages || 0;
       renderPdfToc(d.outline || []);
@@ -430,7 +446,26 @@
   }
 
   function postGoto(page) {
-    els.pdf.contentWindow?.postMessage({ eupubPdfCmd: true, goto: page }, location.origin);
+    els.pdf.contentWindow?.postMessage({ eupubPdfCmd: true, goto: page }, state.pdfOrigin);
+  }
+
+  // Service one relayed native call from the desktop viewer frame. Strictly
+  // whitelisted — the viewer needs exactly lexiconSubset; anything else is
+  // refused rather than forwarded to the preload bridge.
+  const VIEWER_CALLS = new Set(['lexiconSubset']);
+  function serviceViewerCall(d) {
+    const reply = (ok, value, error) =>
+      els.pdf.contentWindow?.postMessage({ __eupubReply: true, callId: d.callId, ok, value, error }, state.pdfOrigin);
+    if (!VIEWER_CALLS.has(d.method)) {
+      reply(false, null, 'method not allowed: ' + d.method);
+      return;
+    }
+    Promise.resolve()
+      .then(() => window.eupub[d.method](...(d.args || [])))
+      .then(
+        (value) => reply(true, value),
+        (err) => reply(false, null, err && err.message ? err.message : String(err))
+      );
   }
 
   function renderPdfToc(outline) {

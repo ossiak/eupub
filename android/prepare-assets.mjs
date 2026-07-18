@@ -16,6 +16,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
+import { generateViewerHtml } from '../build/pdf-viewer-html.mjs';
 
 const require = createRequire(import.meta.url);
 const HERE = path.dirname(fileURLToPath(import.meta.url)); // Eupub/android
@@ -105,44 +106,15 @@ if (!fs.existsSync(pdfBundle)) {
 fs.copyFileSync(pdfBundle, path.join(PDF, 'pdf-viewer.mobile.js'));
 fs.copyFileSync(path.join(EXT, 'src', 'pdf', 'viewer.css'), path.join(PDF, 'viewer.css'));
 
-// 8. Android pdf/viewer.html: the extension's viewer page with three deltas.
-let pdfHtml = fs.readFileSync(path.join(EXT, 'src', 'pdf', 'viewer.html'), 'utf8');
-
-// (a) Drop the header bar. Its "Open original" link would navigate the WebView
-//     to the raw PDF, which it cannot render — and a chrome-free page is what a
-//     future embed under the reader's own toolbar wants. viewer.js null-guards
-//     #filename/#original, so removing them needs no JS change.
-if (!/<header id="bar">[\s\S]*?<\/header>\s*/.test(pdfHtml)) {
-  throw new Error('pdf/viewer.html: <header id="bar"> not found');
-}
-pdfHtml = pdfHtml.replace(/<header id="bar">[\s\S]*?<\/header>\s*/, '');
-
-// (b) Load the bridge (classic, so window.eupub exists first) then the mobile
-//     bundle, instead of the extension's ../../dist/pdf-viewer.js.
-const pdfScript = '<script type="module" src="../../dist/pdf-viewer.js"></script>';
-if (!pdfHtml.includes(pdfScript)) throw new Error('pdf/viewer.html: module script tag not found');
-pdfHtml = pdfHtml.replace(
-  pdfScript,
-  `<script src="../reader/android-bridge.js"></script>\n` +
-    `    <script type="module" src="pdf-viewer.mobile.js"></script>`
+// 8. Android pdf/viewer.html: the extension's viewer page transformed by the
+//    shared generator (build/pdf-viewer-html.mjs — header dropped, bridge
+//    loaded classic-first, its own CSP), with android-bridge.js as the bridge
+//    (it defaults its origin to https://eupub.local, so no host-config script
+//    is needed).
+fs.writeFileSync(
+  path.join(PDF, 'viewer.html'),
+  generateViewerHtml(EXT, ['<script src="../reader/android-bridge.js"></script>'])
 );
-
-// (c) Its own CSP — this page is a separate document, so the reader's CSP does
-//     not apply. Tighter than the reader's: no 'unsafe-inline' for scripts,
-//     because nothing here is inline (android-bridge.js already defaults its
-//     origin to https://eupub.local, so no host-config script is needed).
-//       'wasm-unsafe-eval' — pdf.js's jbig2/openjpeg/qcms decoders
-//       style-src 'unsafe-inline' — pdf.js's TextLayer writes inline styles
-//       connect-src — the ?file= PDF, plus the wasm/ and standard_fonts/ fetches
-//     No blob: in font-src: pdf.js 6 binds embedded fonts with
-//     new FontFace(name, ArrayBuffer), so no URL is ever fetched for them.
-const pdfCsp =
-  `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; ` +
-  `script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; ` +
-  `img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'" />`;
-if (!pdfHtml.includes('<meta charset="utf-8" />')) throw new Error('pdf/viewer.html: charset meta not found');
-pdfHtml = pdfHtml.replace('<meta charset="utf-8" />', `<meta charset="utf-8" />\n    ${pdfCsp}`);
-fs.writeFileSync(path.join(PDF, 'viewer.html'), pdfHtml);
 
 // 9. A sample PDF, plus any real-world PDFs dropped in android/fixtures/.
 //    sample.pdf is Helvetica-only, so it exercises standardFontDataUrl but

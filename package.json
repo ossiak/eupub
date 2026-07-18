@@ -12,7 +12,8 @@
     "build:engine": "rollup -c rollup.engine.config.mjs",
     "build:engine:mobile": "rollup -c rollup.engine.mobile.config.mjs",
     "build:lexicon": "node build/copy-lexicon.js",
-    "build": "npm run build:engine && npm run build:engine:mobile && npm run build:lexicon",
+    "build:pdf": "node build/copy-pdf-viewer.mjs",
+    "build": "npm run build:engine && npm run build:engine:mobile && npm run build:lexicon && npm run build:pdf",
     "start": "npm run build && electron .",
     "dev": "electron .",
     "test": "node --test test/android-bridge.test.js && npm run build && electron test/pipeline.js && electron test/text-pipeline.js && electron test/features.js && electron test/reader-e2e.js",
@@ -44,6 +45,8 @@
       "src/**/*",
       "dist/eupub-engine.mobile.js",
       "dist/lexicon.mjs",
+      "dist/pdf/**",
+      "dist/pdfjs/**",
       "package.json",
       "!**/*.map"
     ],
