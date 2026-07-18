@@ -71,6 +71,11 @@ function bookPathFromArgv(argv, cwd) {
 function deliverOpen(filePath) {
   if (!filePath) return;
   if (win && !win.webContents.isLoading()) {
+    // Mark the delivery exactly like the did-finish-load flush does: this send
+    // can arrive while the renderer's init() is still deciding whether to
+    // auto-reopen the last book, and its open:pending answer must say "a book
+    // was already delivered to this document" or both books load and race.
+    deliveredThisLoad = true;
     win.webContents.send('open-file', filePath);
   } else {
     pendingOpen = filePath;

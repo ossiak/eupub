@@ -320,7 +320,9 @@
     // listeners). Removing the src attribute does NOT unload the document —
     // the old viewer would keep running hidden.
     if (els.pdf.getAttribute('src')) els.pdf.src = 'about:blank';
-    els.euspell.disabled = false;
+    // Re-enable the toggle PDF mode disabled — but only if the engine loaded;
+    // with no engine the toggle would silently do nothing (see init).
+    els.euspell.disabled = !state.engineSource;
     document.body.classList.remove('pdf-mode');
 
     state.book = book;
@@ -371,6 +373,13 @@
     state.pdf = true;
     state.book = book;
     state.model = null;
+    // No chapter is current in PDF mode: index -1 keeps the chapter-only paths
+    // (sidebar wheel paging, nav keys) inert, and a bumped render token makes an
+    // in-flight chapter render drop its result instead of overlaying the PDF.
+    state.index = -1;
+    state.page = 0;
+    state.pages = 1;
+    state.renderToken++;
     state.bookKey = `pdf:${book.sourcePath}`;
     state.pdfPages = 0;
     els.bookTitle.textContent = book.title;
@@ -399,6 +408,11 @@
 
     els.welcome.classList.add('hidden');
     els.iframe.classList.add('hidden');
+    // Unload the chapter document rather than just hide it (the mirror of the
+    // pdf frame's about:blank on the way out): a hidden chapter keeps running —
+    // its resize to 0×0 alone fires the runtime's handler, which posts
+    // eupub:position back into PDF mode — and holds its DOM + engine in memory.
+    if (els.iframe.hasAttribute('srcdoc')) els.iframe.srcdoc = '';
     // The viewer is served from the same private origin as the PDF itself
     // (Android https://eupub.local — the reader's own origin there; desktop
     // app://eupub — cross-origin to the file:// reader). Deriving it from
@@ -753,6 +767,10 @@
   function onChapterMessage(e) {
     // Only the current chapter iframe may drive the reader.
     if (e.source !== els.iframe.contentWindow) return;
+    // No model means no chapter is current (PDF mode, or between books) — every
+    // case below reads state.model, so a late message from a torn-down chapter
+    // must not get past this point.
+    if (!state.model) return;
     const m = e.data || {};
     switch (m.type) {
       case 'eupub:ready':
