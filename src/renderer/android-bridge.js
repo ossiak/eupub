@@ -179,7 +179,9 @@
 
   var openCb = null;
   var bufferedOpen = null;
+  var anyOpenArrived = false; // see hasPendingOpen
   root.__eupubOpenFile = function (path) {
+    anyOpenArrived = true;
     if (openCb) openCb(path);
     else bufferedOpen = path;
   };
@@ -196,6 +198,17 @@
     onOpenFile: function (cb) {
       openCb = cb;
       if (bufferedOpen != null) { var p = bufferedOpen; bufferedOpen = null; cb(p); }
+    },
+    // True when an OS-opened book is pending or has already arrived — the
+    // reader's init checks this to skip the "reopen last book" fallback (the
+    // same contract as preload.js's hasPendingOpen). `anyOpenArrived` is read
+    // AFTER the native round-trip: the host answers on the UI thread, the same
+    // thread that issues __eupubOpenFile, so a "no longer pending" answer is
+    // queued behind any delivery — the check can't miss an open in either
+    // state. On a host without the native method the call rejects, and the
+    // reader keeps its auto-reopen (same graceful fallback as the desktop).
+    hasPendingOpen: function () {
+      return nativeCall('hasPendingOpen').then(function (pending) { return !!pending || anyOpenArrived; });
     },
     join: function () { return joinParts([].slice.call(arguments)); },
     dirname: dirname,

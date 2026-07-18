@@ -313,9 +313,13 @@
     if (book && book.kind === 'pdf') return loadPdf(book);
 
     // Leaving PDF mode (or never in it): restore the chapter view.
+    clearTimeout(pdfPosTimer); // a pending PDF save must not fire once state.pdf drops
     state.pdf = false;
     els.pdf.classList.add('hidden');
-    els.pdf.removeAttribute('src'); // stop the viewer and free the frame
+    // Navigate the frame away to actually stop the viewer (canvases, worker,
+    // listeners). Removing the src attribute does NOT unload the document —
+    // the old viewer would keep running hidden.
+    if (els.pdf.getAttribute('src')) els.pdf.src = 'about:blank';
     els.euspell.disabled = false;
     document.body.classList.remove('pdf-mode');
 
@@ -361,6 +365,9 @@
   // menu), and per-book persistence early-returns while state.pdf is set. The
   // reforming already happened in-viewer, so there is no chapter model here.
   function loadPdf(book) {
+    // A pending debounced save belongs to the PREVIOUS document — flush it away
+    // before bookKey changes, or its page would be written under this book's key.
+    clearTimeout(pdfPosTimer);
     state.pdf = true;
     state.book = book;
     state.model = null;
@@ -407,7 +414,10 @@
     if (d.eupubPdf === 'ready') {
       state.pdfPages = d.pages || 0;
       renderPdfToc(d.outline || []);
-      if (state.pdfResume) postGoto(state.pdfResume);
+      // != null: a saved page 0 is falsy but real. Consumed once — a later
+      // 'ready' (viewer reload) must not yank the reader back to the resume.
+      if (state.pdfResume != null) postGoto(state.pdfResume);
+      state.pdfResume = null;
     } else if (d.eupubPdf === 'position') {
       state.pdfPages = d.pages || state.pdfPages;
       // Mirror the EPUB layout: overall percent in the toolbar, granular page
@@ -1305,11 +1315,22 @@
   }
   function loadPrefs() {
     const defaults = { euspell: true, fontSize: 14, theme: 'light', searchCaseSensitive: false };
+    let stored = {};
     try {
-      return Object.assign(defaults, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}'));
+      stored = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') || {};
     } catch {
-      return defaults;
+      /* corrupt JSON — fall back to defaults */
     }
+    // Coerce each field: a corrupt store (e.g. a string fontSize) must not leak
+    // into arithmetic ("14" + 1 → "141") or produce an unknown theme.
+    const p = Object.assign({}, defaults, stored);
+    p.euspell = !!p.euspell;
+    p.searchCaseSensitive = !!p.searchCaseSensitive;
+    p.fontSize = Number(p.fontSize);
+    if (!Number.isFinite(p.fontSize)) p.fontSize = defaults.fontSize;
+    p.fontSize = Math.max(12, Math.min(30, Math.round(p.fontSize)));
+    if (p.theme !== 'dark' && p.theme !== 'light') p.theme = defaults.theme;
+    return p;
   }
   function savePrefs() {
     localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));

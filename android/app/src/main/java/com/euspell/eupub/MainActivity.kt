@@ -48,10 +48,16 @@ class MainActivity : ComponentActivity() {
 
     // Open-from-OS state (mirrors main.js's pendingOpen/deliverOpen): a PDF handed
     // in by an intent is imported off-thread, then delivered to the reader once the
-    // page has loaded. All three are touched only on the UI thread.
+    // page has loaded. All four are touched only on the UI thread.
     private var pageLoaded = false
     private var pendingOpen: String? = null
     private var intentOpen = false
+    // True from intent arrival until the imported path has been handed to the
+    // page (or the import failed). Answered to the reader via hasPendingOpen so
+    // its init can skip the "reopen last book" fallback — otherwise the two
+    // loads race, exactly the desktop bug fixed in src/main.js. Unlike
+    // intentOpen (sticky, guards the sample seed), this is transient.
+    private var openPending = false
 
     // SAF picker for pickEpub(): resolves the pending promise with the opened book.
     private val picker =
@@ -118,6 +124,7 @@ class MainActivity : ComponentActivity() {
                 pageLoaded = true
                 pendingOpen?.let { p ->
                     pendingOpen = null
+                    openPending = false // handed to the page; the bridge buffers it from here
                     webView.evaluateJavascript("window.__eupubOpenFile(${JSONObject.quote(p)});", null)
                 }
                 maybeSeedSample()
@@ -159,11 +166,13 @@ class MainActivity : ComponentActivity() {
     private fun handleIntent(intent: Intent?) {
         val uri = uriFromIntent(intent) ?: return
         intentOpen = true // don't seed the sample over an intent-opened book
+        openPending = true // the reader must not auto-reopen the last book meanwhile
         io.execute {
             try {
                 deliverOpen(importPdf(uri, displayName(uri)).getString("sourcePath"))
             } catch (e: Exception) {
                 android.util.Log.w("Eupub", "open-with import failed", e)
+                runOnUiThread { openPending = false } // nothing will arrive
             }
         }
     }
@@ -171,6 +180,7 @@ class MainActivity : ComponentActivity() {
     private fun deliverOpen(path: String) {
         runOnUiThread {
             if (pageLoaded && ::webView.isInitialized) {
+                openPending = false // handed to the page; the bridge buffers it from here
                 webView.evaluateJavascript("window.__eupubOpenFile(${JSONObject.quote(path)});", null)
             } else {
                 pendingOpen = path
@@ -396,6 +406,18 @@ class MainActivity : ComponentActivity() {
                     resolve(id, false, errJson(e))
                 }
             }
+        }
+
+        // Whether an OS-opened book is still on its way to the page. Answered via
+        // the promise registry ON THE UI THREAD — the same thread that issues the
+        // __eupubOpenFile delivery — so the answer's evaluateJavascript is queued
+        // behind any delivery already sent: by the time a "false" reaches the
+        // page, the delivery (if any) has arrived and set the bridge's
+        // already-arrived flag. A synchronous @JavascriptInterface getter could
+        // overtake the queued delivery and reintroduce the race.
+        @JavascriptInterface
+        fun hasPendingOpen(id: Int, argsJson: String) {
+            runOnUiThread { resolve(id, true, if (openPending) "true" else "false") }
         }
 
         @JavascriptInterface

@@ -487,6 +487,11 @@ window.EupubViewerRuntime = function () {
   document.addEventListener('selectionchange', debounce(onSelectionChange, 120));
 
   window.addEventListener('message', function (e) {
+    // Only the embedding reader may drive the runtime (defense-in-depth: a
+    // sibling frame holding a window reference could otherwise post commands).
+    // When the runtime runs in a top-level page, parent === window, so a page
+    // driving its own runtime — the offscreen tests — still passes.
+    if (e.source !== window.parent) return;
     var m = e.data || {};
     switch (m.type) {
       case 'eupub:next': if (!nextPage()) post('eupub:key', { key: 'ArrowRight' }); break;

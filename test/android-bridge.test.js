@@ -133,6 +133,33 @@ test('onOpenFile delivers an OS-opened path, buffering until a handler registers
   assert.deepEqual(seenLate, ['/data/user/0/app/files/pdfs/b.pdf']);
 });
 
+test('hasPendingOpen combines the native answer with already-arrived opens', async () => {
+  // Native says pending → true, regardless of arrival.
+  const pending = makeWorld();
+  pending.window.AndroidBridge.hasPendingOpen = (id) =>
+    pending.window.__eupubResolve(id, true, 'true');
+  assert.equal(await pending.window.eupub.hasPendingOpen(), true);
+
+  // Native says not pending, but the open already arrived (delivery ordered
+  // before the answer, as the UI-thread serialization guarantees) → still true.
+  const arrived = makeWorld();
+  arrived.window.AndroidBridge.hasPendingOpen = (id) =>
+    arrived.window.__eupubResolve(id, true, 'false');
+  arrived.window.__eupubOpenFile('/data/user/0/app/files/pdfs/c.pdf');
+  assert.equal(await arrived.window.eupub.hasPendingOpen(), true);
+
+  // No intent open at all → false: the reader keeps its auto-reopen.
+  const idle = makeWorld();
+  idle.window.AndroidBridge.hasPendingOpen = (id) =>
+    idle.window.__eupubResolve(id, true, 'false');
+  assert.equal(await idle.window.eupub.hasPendingOpen(), false);
+
+  // A host without the native method rejects — the reader's catch keeps the
+  // auto-reopen (same graceful fallback as the desktop preload contract).
+  const old = makeWorld();
+  await assert.rejects(old.window.eupub.hasPendingOpen());
+});
+
 test('a child frame relays native calls through the top frame', async () => {
   const { top, child } = makeFramePair();
   const p = child.eupub.lexiconSubset(['the', 'people']);
