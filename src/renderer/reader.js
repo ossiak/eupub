@@ -142,10 +142,24 @@
       window.eupub.onOpenFile((filePath) => openRecent(filePath));
     }
 
+    // When the OS launched us WITH a book (double-clicked file), that book is
+    // arriving via onOpenFile — don't also auto-reopen the last book. The two
+    // loads would race: each open's cleanup deletes the previous extraction
+    // dir, so the losing load can end up reading chapters from a deleted dir.
+    // (Guarded: the Android bridge doesn't provide the check.)
+    let osOpen = false;
+    if (window.eupub.hasPendingOpen) {
+      try {
+        osOpen = await window.eupub.hasPendingOpen();
+      } catch {
+        /* older main without the channel — keep the auto-reopen */
+      }
+    }
+
     // Reopen the most recent book on launch. Fall back to the legacy single-slot
     // key so existing users keep their last book before any recent is recorded.
     const recents = loadRecents();
-    const last = (recents[0] && recents[0].path) || localStorage.getItem(LAST_KEY);
+    const last = osOpen ? null : (recents[0] && recents[0].path) || localStorage.getItem(LAST_KEY);
     if (last) {
       try {
         const book = await window.eupub.openPath(last);

@@ -22,6 +22,7 @@ const getLex = () => (lexP ||= import(pathToFileURL(path.join(__dirname, '..', '
 
 ipcMain.handle('epub:pick', () => null);
 ipcMain.handle('epub:openPath', (_e, p) => openEpub(p));
+ipcMain.handle('open:pending', () => false); // no OS-opened book in the harness
 ipcMain.handle('fs:readText', (_e, p) => fs.readFileSync(p, 'utf8'));
 ipcMain.handle('engine:source', () => fs.readFileSync(path.join(__dirname, '..', 'dist', 'eupub-engine.mobile.js'), 'utf8'));
 ipcMain.handle('lexicon:subset', async (_e, words) => {

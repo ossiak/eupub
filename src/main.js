@@ -176,6 +176,14 @@ app.on('quit', () => {
 
 // --- IPC -------------------------------------------------------------------
 
+// Whether a book handed over by the OS is still waiting to be delivered to the
+// renderer. Asked by the renderer's init() BEFORE it decides to reopen the last
+// book: an OS-opened book is about to arrive on the open-file channel, and
+// running both loads would race (the second open's cleanup deletes the first's
+// extraction dir mid-read). A path that was ALREADY flushed is covered on the
+// preload side — see hasPendingOpen in preload.js.
+ipcMain.handle('open:pending', () => pendingOpen != null);
+
 // Show a file picker, then open the chosen book. Returns null if cancelled.
 ipcMain.handle('epub:pick', async () => {
   const res = await dialog.showOpenDialog(win, {
