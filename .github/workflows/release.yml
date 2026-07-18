@@ -2,7 +2,7 @@
 # Release; on a manual run (workflow_dispatch) it just uploads the AppImage as a
 # downloadable workflow artifact — a dry run with no tag/release. Cut a release:
 #   npm version <x.y.z>   # edits package.json + creates the tag
-#   git push origin main --tags
+#   git push --follow-tags origin main   # pushes the commit AND its tag together
 name: Release
 
 on:
@@ -39,7 +39,8 @@ jobs:
           fi
 
       # dist:linux builds the engine + lexicon, then runs electron-builder
-      # --linux AppImage. artifactName is Eupub-${version}.AppImage.
+      # --linux AppImage. electron-builder writes to release/ (build.directories
+      # .output in package.json), named Eupub-${version}.AppImage.
       - run: npm run dist:linux
 
       # Tag push → publish a Release with the AppImage attached.
@@ -48,7 +49,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/Eupub-*.AppImage \
+          gh release create "$GITHUB_REF_NAME" release/Eupub-*.AppImage \
             --title "Eupub ${GITHUB_REF_NAME#v}" \
             --generate-notes
 
@@ -59,5 +60,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: eupub-appimage
-          path: dist/Eupub-*.AppImage
+          path: release/Eupub-*.AppImage
           if-no-files-found: error
