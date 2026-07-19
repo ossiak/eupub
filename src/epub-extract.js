@@ -6,6 +6,13 @@ const fs = require('node:fs');
 const os = require('node:os');
 const AdmZip = require('adm-zip');
 
+// Extraction budget: real books are tens of MB uncompressed; a zip bomb claims
+// (and would expand to) orders of magnitude more. Checked against the entry
+// headers before anything is written, and adm-zip sizes each entry's inflate
+// buffer from the same headers, so the claimed total bounds what extraction
+// can produce.
+const MAX_EXTRACT_BYTES = 512 * 1024 * 1024;
+
 /**
  * Async: decompression runs on libuv's threadpool (adm-zip's extractAllToAsync
  * uses zlib's async inflate), so a large book doesn't freeze the main process.
@@ -14,6 +21,13 @@ const AdmZip = require('adm-zip');
  */
 async function openEpub(filePath) {
   const zip = new AdmZip(filePath);
+  let claimed = 0;
+  for (const entry of zip.getEntries()) {
+    claimed += entry.header.size;
+    if (claimed > MAX_EXTRACT_BYTES) {
+      throw new Error(`Invalid EPUB: uncompressed size exceeds ${MAX_EXTRACT_BYTES / (1024 * 1024)} MB`);
+    }
+  }
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eupub-'));
   try {
     await new Promise((resolve, reject) => {

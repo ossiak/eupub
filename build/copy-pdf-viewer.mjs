@@ -12,6 +12,7 @@
 // Run: npm run build:pdf   (or as part of npm run build)
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { generateViewerHtml } from './pdf-viewer-html.mjs';
 
@@ -21,14 +22,25 @@ const EXT = path.resolve(EUPUB, '..', 'euspell_ext');
 const PDF = path.join(EUPUB, 'dist', 'pdf');
 const PDFJS = path.join(EUPUB, 'dist', 'pdfjs');
 
+/** Build a missing euspell_ext artifact in the sibling checkout instead of
+ * bouncing the user over there by hand (a fresh clone hits this on the first
+ * `npm run build`). */
+function ensureExtArtifact(artifact, script) {
+  if (fs.existsSync(artifact)) return;
+  if (!fs.existsSync(EXT)) {
+    throw new Error(`sibling euspell_ext checkout not found at ${EXT} — clone it next to Eupub.`);
+  }
+  console.log(`${path.relative(EUPUB, artifact)} missing — running "npm run ${script}" in euspell_ext…`);
+  execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', script], { cwd: EXT, stdio: 'inherit' });
+  if (!fs.existsSync(artifact)) {
+    throw new Error(`${artifact} still missing after "npm run ${script}" in euspell_ext.`);
+  }
+}
+
 const pdfBundle = path.join(EXT, 'dist', 'pdf-viewer.mobile.js');
-if (!fs.existsSync(pdfBundle)) {
-  throw new Error('euspell_ext/dist/pdf-viewer.mobile.js missing — run "npm run build:pdf:mobile" in euspell_ext first.');
-}
+ensureExtArtifact(pdfBundle, 'build:pdf:mobile');
 const pdfjsSrc = path.join(EXT, 'dist', 'pdfjs');
-if (!fs.existsSync(path.join(pdfjsSrc, 'pdf.worker.min.mjs'))) {
-  throw new Error('euspell_ext/dist/pdfjs missing — run "npm run build:pdfjs" in euspell_ext first.');
-}
+ensureExtArtifact(path.join(pdfjsSrc, 'pdf.worker.min.mjs'), 'build:pdfjs');
 
 fs.mkdirSync(PDF, { recursive: true });
 fs.copyFileSync(pdfBundle, path.join(PDF, 'pdf-viewer.mobile.js'));

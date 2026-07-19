@@ -4,7 +4,7 @@
 //
 // Produces:
 //   assets/reader/{index.html, reader.js, epub.js, viewer-runtime.js,
-//                  reader.css, android-bridge.js}
+//                  reader.css, android-bridge.js, purify.js}
 //   assets/engine/eupub-engine.mobile.js
 //   assets/lexicon.db      (on-disk SQLite lexicon, queried natively by the bridge)
 //   assets/sample.epub     (bundled first-launch book)
@@ -36,7 +36,7 @@ fs.mkdirSync(ENGINE, { recursive: true });
 fs.mkdirSync(PDF, { recursive: true });
 
 // 1. Reuse the renderer verbatim (the shared, host-agnostic half).
-for (const f of ['reader.js', 'epub.js', 'viewer-runtime.js', 'reader.css', 'android-bridge.js']) {
+for (const f of ['reader.js', 'epub.js', 'viewer-runtime.js', 'reader.css', 'android-bridge.js', 'purify.js']) {
   fs.copyFileSync(path.join(RENDERER, f), path.join(READER, f));
 }
 

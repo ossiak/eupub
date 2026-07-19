@@ -303,7 +303,14 @@
       setStatus('left', 'That book could not be opened — removed from recent.');
       return;
     }
-    await loadBook(book);
+    try {
+      await loadBook(book);
+    } catch (err) {
+      // Without this, a book that opens in main but fails renderer-side (e.g. a
+      // corrupt OPF) is an unhandled rejection and the UI just goes quiet.
+      console.error(err);
+      setStatus('left', 'That book could not be loaded — it may be corrupt.');
+    }
   }
 
   async function loadBook(book) {
@@ -325,8 +332,17 @@
     els.euspell.disabled = !state.engineSource;
     document.body.classList.remove('pdf-mode');
 
+    // Validate before committing any state: a book with no readable spine
+    // (malformed OPF, or nothing but non-linear items) would render a blank
+    // frame and crash chapter lookups downstream — refuse it and keep whatever
+    // book is currently open instead.
+    const model = await window.EupubModel.parseAsync(book);
+    if (!model.spine.length) {
+      setStatus('left', 'This book has no readable content.');
+      return;
+    }
     state.book = book;
-    state.model = await window.EupubModel.parseAsync(book);
+    state.model = model;
     for (const s of state.model.spine) s.fileURL = window.eupub.fileURL(s.absPath);
 
     // 'id:' prefix so an identifier can't collide with a path-shaped legacy key.
@@ -628,12 +644,11 @@
   }
 
   function buildSrcdoc(html, baseHref, cfg, subset) {
-    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const doc = parseChapterDoc(html);
 
     for (const m of doc.querySelectorAll('meta[http-equiv]')) {
       if (/content-security-policy/i.test(m.getAttribute('http-equiv') || '')) m.remove();
     }
-    sanitizeChapterDoc(doc);
 
     let head = doc.head;
     if (!head) {
@@ -669,7 +684,7 @@
       noAuto.textContent = 'window.__eupubNoAuto=true;';
       doc.body.appendChild(noAuto);
       const engine = doc.createElement('script');
-      engine.textContent = state.engineSource;
+      engine.textContent = scriptSafe(state.engineSource);
       doc.body.appendChild(engine);
     }
     const boot = doc.createElement('script');
@@ -678,7 +693,7 @@
         ? `window.EupubEngine.setLexicon(new Map(${jsonForScript(subset)}));` +
           `window.EupubEngine.walkTextNodes(document.body, window.EupubEngine.convert);`
         : '';
-    boot.textContent = `${reform}window.__eupubConfig=${jsonForScript(cfg)};(${state.runtimeSource})();`;
+    boot.textContent = scriptSafe(`${reform}window.__eupubConfig=${jsonForScript(cfg)};(${state.runtimeSource})();`);
     doc.body.appendChild(boot);
 
     return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
@@ -689,6 +704,30 @@
   // "</script>" can't close the boot script and inject markup of its own.
   function jsonForScript(value) {
     return JSON.stringify(value).replace(/</g, '\\u003c');
+  }
+
+  // Script source safe to survive the srcdoc serialize→parse round trip: a
+  // literal "</script" would terminate the tag early and turn the rest into
+  // markup. In valid JS it can only occur inside string/regex literals, where
+  // "<\/script" is byte-for-byte equivalent.
+  function scriptSafe(source) {
+    return source.replace(/<\/script/gi, '<\\/script');
+  }
+
+  // Parse an untrusted chapter into an inert Document, sanitized in two passes:
+  // DOMPurify over the string first — its output is hardened against the
+  // serialize→reparse mutations (mXSS) that defeat DOM-walking sanitizers —
+  // then sanitizeChapterDoc for the app-specific vectors it doesn't cover
+  // (meta refresh, form actions). WHOLE_DOCUMENT keeps head/body; <link> is
+  // allowed back in because chapters load their stylesheets with it. A missing
+  // DOMPurify (a stale Android asset bundle) degrades to the second pass alone.
+  function parseChapterDoc(html) {
+    if (window.DOMPurify) {
+      html = window.DOMPurify.sanitize(html, { WHOLE_DOCUMENT: true, ADD_TAGS: ['link'] });
+    }
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    sanitizeChapterDoc(doc);
+    return doc;
   }
 
   // Strip anything executable from an untrusted chapter document. The srcdoc
@@ -787,7 +826,11 @@
         break;
       case 'eupub:navigate': {
         const target = String(m.href).split('#')[0];
-        const frag = String(m.href).split('#')[1] || '';
+        // m.href is a resolved URL, so the fragment arrives percent-encoded —
+        // but gotoFragment matches raw ids (getElementById). Decode, tolerating
+        // a literal "%" in the id.
+        let frag = String(m.href).split('#')[1] || '';
+        try { frag = decodeURIComponent(frag); } catch { /* literal % — use as is */ }
         const idx = state.model.spine.findIndex((s) => s.fileURL === target);
         if (idx !== -1) go(idx, { fragment: frag });
         break;
@@ -1122,11 +1165,10 @@
     } catch {
       /* unreadable chapter — index it as empty */
     }
-    const doc = new DOMParser().parseFromString(html, 'text/html');
     // Full sanitize, not just script removal: importNode below adopts these
     // elements into THIS document, where a surviving onerror handler on an <img>
     // could fire in the reader's own realm.
-    sanitizeChapterDoc(doc);
+    const doc = parseChapterDoc(html);
     blocks = [];
     if (doc.body) {
       let refBody = null;
@@ -1204,8 +1246,7 @@
   function chapterVocab(html) {
     const words = new Set();
     if (!window.EupubEngine) return words;
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    sanitizeChapterDoc(doc);
+    const doc = parseChapterDoc(html);
     if (!doc.body) return words;
     try {
       const clone = document.importNode(doc.body, true); // reader-owned copy
