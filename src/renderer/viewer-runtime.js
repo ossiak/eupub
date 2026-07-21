@@ -435,13 +435,26 @@ window.EupubViewerRuntime = function () {
     }
   });
 
-  var wheelLock = 0;
+  // A single trackpad swipe fires a burst of wheel events (often 400-900ms with
+  // momentum) — one page-turn per burst, not per event. Debounce off the gap
+  // between events (gesture end) rather than a fixed window from the first one,
+  // since a fixed window can expire mid-burst and double-fire on the same swipe.
+  var wheelIdle = null;
+  var wheelActedThisBurst = false;
   document.addEventListener('wheel', function (e) {
-    var now = Date.now();
-    if (now < wheelLock) return;
-    var d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    // Horizontal-dominant swipes only — vertical swipes are left alone (no
+    // scrollable content to move anyway) rather than accidentally paging.
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    var d = e.deltaX;
     if (Math.abs(d) < 8) return;
-    wheelLock = now + 250;
+    // Only a qualifying event extends the burst. Trackpad momentum keeps
+    // firing (mostly trivial) wheel events for a second-plus after the fingers
+    // lift; if those kept the burst alive too, the next real swipe would be
+    // stuck waiting out someone else's momentum tail.
+    clearTimeout(wheelIdle);
+    wheelIdle = setTimeout(function () { wheelActedThisBurst = false; }, 70);
+    if (wheelActedThisBurst) return;
+    wheelActedThisBurst = true;
     if (d > 0) { if (!nextPage()) post('eupub:key', { key: 'ArrowRight' }); }
     else { if (!prevPage()) post('eupub:key', { key: 'ArrowLeft' }); }
   }, { passive: true });

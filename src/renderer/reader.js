@@ -637,7 +637,17 @@
     if (state.index >= 0) sendToChapter({ type: 'eupub:prev' });
   }
   // The runtime posts a key back when it can't page further: turn the chapter.
+  // Chapter turns replace the iframe, which wipes the fresh runtime's own wheel
+  // debounce state — so a single long swipe that lands right on a chapter's last
+  // page can otherwise cascade into the next (freshly-unlocked) chapter's edge,
+  // and the next, for as long as the gesture's momentum tail keeps qualifying.
+  // This cooldown is the only state that survives the iframe swap, so it's what
+  // actually caps a gesture to one chapter turn.
+  let edgeTurnCooldown = 0;
   function handleEdgeTurn(key) {
+    const now = Date.now();
+    if (now < edgeTurnCooldown) return;
+    edgeTurnCooldown = now + 500;
     if (key === 'ArrowRight' && state.index < state.model.spine.length - 1) go(state.index + 1, {});
     else if (key === 'ArrowLeft' && state.index > 0) go(state.index - 1, { startAtEnd: true });
   }
@@ -648,20 +658,27 @@
   }
 
   // Wheel over the Contents sidebar: never scroll the TOC (click-only), instead
-  // page the book — matching the in-iframe wheel feel (threshold + 250ms lock).
-  // Only acts while the Contents tab is active, so the scrollable Marks/Notes/
-  // Search panels keep their normal wheel scrolling.
-  let tocWheelLock = 0;
+  // page the book — matching the in-iframe wheel feel (threshold + idle-debounce,
+  // one page-turn per swipe burst; see viewer-runtime.js's wheel handler for why
+  // a fixed-window lock double-fires on longer/momentum swipes). Only acts while
+  // the Contents tab is active, so the scrollable Marks/Notes/Search panels keep
+  // their normal wheel scrolling.
+  let tocWheelIdle = null;
+  let tocWheelActedThisBurst = false;
   function onSidebarWheel(e) {
     if (state.index < 0) return;
     if (!els.sidebar.contains(e.target)) return;
     if (!els.panelToc.classList.contains('active')) return;
     e.preventDefault();
-    const now = Date.now();
-    if (now < tocWheelLock) return;
-    const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    // Horizontal-dominant swipes only — see viewer-runtime.js's wheel handler.
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    const d = e.deltaX;
     if (Math.abs(d) < 8) return;
-    tocWheelLock = now + 250;
+    // Only a qualifying event extends the burst — see viewer-runtime.js for why.
+    clearTimeout(tocWheelIdle);
+    tocWheelIdle = setTimeout(() => { tocWheelActedThisBurst = false; }, 70);
+    if (tocWheelActedThisBurst) return;
+    tocWheelActedThisBurst = true;
     if (d > 0) navNext();
     else navPrev();
   }
