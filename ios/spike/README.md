@@ -16,27 +16,35 @@ whether state persists on that origin.
   `reader.js` per platform, or the app needs a loopback HTTP server to get a real
   `http://127.0.0.1:PORT` origin.
 
-## Status — the verdict is still unobserved
+## Status — PASS (verdict observed 2026-07-20, iOS 26 simulator)
 
-**As of this commit, nobody has read the result yet.** The toolchain is proven:
-`run.sh` has been run once on a Mac and got as far as `Install Succeeded`, so
-XcodeGen, the headless build, and the simulator all work. But that run produced
-no screenshots and no visible Simulator window, and the verdict was never seen.
+**The custom-scheme approach works.** Across a kill-and-relaunch on the iPhone 17
+simulator (iOS 26):
 
-Two candidate causes, both addressed here:
+```
+PASS — state survived N launches
+origin            eupub://localhost
+localStorage      readable + writable
+fetch subresource OK
+```
 
-1. The script suppressed stderr on its `simctl io` calls, so a screenshot failure
-   would have been **silent**. Fixed — those errors now print.
-2. The result only existed on screen and in a PNG. Fixed — the page now posts its
-   report back through a `WKScriptMessageHandler` and `run.sh` prints it, so the
-   answer lands in the terminal next to everything else.
+So `localStorage` persists on `eupub://localhost` (the origin is that, **not**
+opaque/`null`), and a `fetch()` of a served subresource works. The iOS shell can
+be a direct translation of `MainActivity.kt` with the renderer byte-identical —
+the loopback-HTTP-server fallback is not needed.
 
-**Next step: run `./run.sh` and read the block it prints.** If it says `NO
-VERDICT`, see Troubleshooting — that path is now instrumented rather than silent.
+**ONE GOTCHA the real shell must carry:** the scheme handler MUST return an
+`HTTPURLResponse` with `statusCode: 200`, not a bare `URLResponse`. `fetch()`
+reads its status from the underlying response; a non-HTTP `URLResponse` surfaces
+as `status 0` (`r.ok === false`), so the main document still renders while every
+`readText` / `engineSource` fetch fails — a silent, misleading split. Fixed in
+`ContentView.swift`'s `SpikeSchemeHandler`; the real `BookPathHandler`/asset
+analog needs the same 200 + `Content-Type`.
 
-The message-handler round-trip is not just for this readout, incidentally: it's
-the same mechanism the real bridge uses for `window.eupub`, so a working verdict
-is also a first proof of half the bridge design.
+(First full run showed a blank page and `NO VERDICT`. Causes: `run.sh` read
+`verdict.txt` after only 3s — before launch 2 had written it (sleeps bumped to
+6s) — and the `fetch` HTTP-0 failure above. The verdict is read most reliably via
+`xcrun simctl launch --console-pty`, which captures the app's `print()`.)
 
 ## Run it
 

@@ -108,12 +108,18 @@ final class SpikeSchemeHandler: NSObject, WKURLSchemeHandler {
         }
 
         let data = Data(body.utf8)
-        let response = URLResponse(
+        // Return a real HTTP 200, not a bare URLResponse. fetch() derives its
+        // Response.status from the underlying response, and a non-HTTP
+        // URLResponse surfaces as status 0 (r.ok === false) — which is exactly
+        // why the /probe.txt fetch failed with "HTTP 0" while the main document
+        // still rendered (document loads don't check status). The real bridge's
+        // readText / engineSource are fetches too, so they need a genuine 200.
+        let response = HTTPURLResponse(
             url: url,
-            mimeType: mime,
-            expectedContentLength: data.count,
-            textEncodingName: "utf-8"
-        )
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "\(mime); charset=utf-8"]
+        )!
         urlSchemeTask.didReceive(response)
         urlSchemeTask.didReceive(data)
         urlSchemeTask.didFinish()

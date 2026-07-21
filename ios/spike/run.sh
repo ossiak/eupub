@@ -36,11 +36,11 @@ fi
 
 if [ $# -ge 1 ]; then
   UDID=$(xcrun simctl list devices available | grep -F "$1 (" | head -1 |
-         sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
+         sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/') || true
   [ -n "$UDID" ] || { echo "error: no available simulator named '$1'"; exit 1; }
 else
   UDID=$(xcrun simctl list devices available | grep -E 'iPhone' | head -1 |
-         sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
+         sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/') || true
   [ -n "$UDID" ] || { echo "error: no iPhone simulator available. Open Xcode once to install one."; exit 1; }
 fi
 echo "==> simulator $UDID"
@@ -78,7 +78,7 @@ VERDICT="$CONTAINER/Documents/verdict.txt"
 echo
 echo "==> launch 1 — writes localStorage, expect FIRST RUN"
 xcrun simctl launch "$UDID" "$BUNDLE_ID" >/dev/null
-sleep 3
+sleep 6
 xcrun simctl io "$UDID" screenshot launch1.png
 
 echo "==> killing the process (the part that matters)"
@@ -91,7 +91,7 @@ rm -f "$VERDICT"
 
 echo "==> launch 2 — fresh process, expect PASS"
 xcrun simctl launch "$UDID" "$BUNDLE_ID" >/dev/null
-sleep 3
+sleep 6
 xcrun simctl io "$UDID" screenshot launch2.png
 
 # --- the answer ------------------------------------------------------------
