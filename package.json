@@ -20,7 +20,8 @@
     "icon": "node build/make-icon.js",
     "package": "npm run build && node build/package.js",
     "dist": "npm run build && electron-builder --win nsis",
-    "dist:linux": "npm run build && electron-builder --linux AppImage"
+    "dist:linux": "npm run build && electron-builder --linux AppImage",
+    "dist:mac": "npm run build && electron-builder --mac"
   },
   "devDependencies": {
     "@electron/packager": "^20.0.1",
@@ -62,6 +63,22 @@
       "icon": "build/icon.ico",
       "artifactName": "eupub-Setup-${version}.${ext}"
     },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.productivity",
+      "artifactName": "Eupub-${version}.${ext}",
+      "fileAssociations": [
+        {
+          "ext": "epub",
+          "name": "EPUB Document",
+          "role": "Viewer"
+        }
+      ]
+    },
     "linux": {
       "target": [
         "AppImage"
@@ -87,5 +104,10 @@
       "shortcutName": "Eupub",
       "uninstallDisplayName": "Eupub ${version}"
     }
+  },
+  "allowScripts": {
+    "electron@33.4.11": true,
+    "electron-winstaller@5.4.0": true,
+    "fsevents@2.3.3": true
   }
 }
