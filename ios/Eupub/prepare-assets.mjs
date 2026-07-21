@@ -8,20 +8,18 @@
 //                     reader.css, ios-bridge.js}
 //   Resources/engine/eupub-engine.mobile.js
 //   Resources/lexicon.db     (on-disk SQLite lexicon, queried natively by the bridge)
-//   Resources/book/…         (the sample book, PRE-EXTRACTED — Phase 1 skips a
-//                             runtime unzip; pickEpub/openPath of arbitrary books
-//                             comes later, with a Swift unzip)
+//   Resources/sample.epub    (bundled first-launch book; the app unzips it into
+//                             its container on first open, the SAME path a
+//                             user-picked book takes)
 //
 // The only differences from the Android stager: the served origin is
-// eupub://localhost (WKWebView can't serve virtual https), the bridge shim is
-// ios-bridge.js (webkit.messageHandlers transport), and the sample is unpacked
-// here rather than at runtime.
+// eupub://localhost (WKWebView can't serve virtual https) and the bridge shim is
+// ios-bridge.js (webkit.messageHandlers transport).
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
-import AdmZip from 'adm-zip';
 
 const require = createRequire(import.meta.url);
 const HERE = path.dirname(fileURLToPath(import.meta.url)); // Eupub/ios/Eupub
@@ -32,13 +30,11 @@ const EXT = path.resolve(EUPUB, '..', 'euspell_ext');
 const ASSETS = path.join(HERE, 'www'); // bundled as a folder reference (structure preserved)
 const READER = path.join(ASSETS, 'reader');
 const ENGINE = path.join(ASSETS, 'engine');
-const BOOK = path.join(ASSETS, 'book');
 
 // Start clean so a removed source file can't linger in the bundle.
 fs.rmSync(ASSETS, { recursive: true, force: true });
 fs.mkdirSync(READER, { recursive: true });
 fs.mkdirSync(ENGINE, { recursive: true });
-fs.mkdirSync(BOOK, { recursive: true });
 
 // 1. Reuse the renderer verbatim (the shared, host-agnostic half) + the iOS
 //    bridge shim (replaces the Electron preload, as android-bridge.js does).
@@ -89,25 +85,10 @@ try {
   console.warn('[ios-prepare] lexicon.db build failed (chapters will render UNREFORMED):', e.message);
 }
 
-// 5. The sample book, generated then PRE-EXTRACTED into Resources/book/ so the
-//    scheme handler can serve /book/… with no runtime unzip. Extraction mirrors
-//    MainActivity.extractEpub's zip-slip guard.
+// 5. The sample book (the .epub itself). The app unzips it into its container on
+//    first open, exactly as it will for user-picked books, so the sample and
+//    real books share one extraction path (Bridge.extractEpub).
 const { makeEpub } = require(path.join(EUPUB, 'test', 'make-epub.js'));
-const tmpEpub = path.join(ASSETS, '.sample.epub.tmp');
-makeEpub(tmpEpub);
-const zip = new AdmZip(tmpEpub);
-const bookCanon = fs.realpathSync(BOOK);
-for (const entry of zip.getEntries()) {
-  const outFile = path.join(BOOK, entry.entryName);
-  const canon = path.resolve(outFile);
-  if (canon !== bookCanon && !canon.startsWith(bookCanon + path.sep)) continue; // zip-slip guard
-  if (entry.isDirectory) {
-    fs.mkdirSync(outFile, { recursive: true });
-  } else {
-    fs.mkdirSync(path.dirname(outFile), { recursive: true });
-    fs.writeFileSync(outFile, entry.getData());
-  }
-}
-fs.rmSync(tmpEpub, { force: true });
+makeEpub(path.join(ASSETS, 'sample.epub'));
 
 console.log('Assets prepared in', ASSETS);

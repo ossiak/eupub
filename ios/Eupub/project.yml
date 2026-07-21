@@ -14,6 +14,13 @@ options:
   deploymentTarget:
     iOS: "15.0"
 
+packages:
+  # EPUB is a ZIP; iOS Foundation has no unzip, so use ZIPFoundation (pure Swift)
+  # for openPath/pickEpub extraction — the analog of Android's ZipInputStream.
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation.git
+    from: "0.9.19"
+
 targets:
   Eupub:
     type: application
@@ -27,6 +34,7 @@ targets:
     dependencies:
       # For the native SQLite lexicon (import SQLite3 in Lexicon.swift).
       - sdk: libsqlite3.tbd
+      - package: ZIPFoundation
     info:
       path: Generated-Info.plist
       properties:

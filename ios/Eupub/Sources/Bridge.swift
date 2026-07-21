@@ -1,18 +1,28 @@
 import WebKit
 import UIKit
+import ZIPFoundation
+import UniformTypeIdentifiers
 
 /// The window.eupub native surface (mirrors src/preload.js and the Android
 /// Bridge). Receives {method, id, args} from ios-bridge.js's nativeCall and
 /// settles the JS-side promise by evaluating window.__eupubResolve(id, ok, json).
 /// Also seeds the bundled sample on first launch (the Android maybeSeedSample).
-final class Bridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+final class Bridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate, UIDocumentPickerDelegate {
     weak var webView: WKWebView?
+    let bookStore = BookStore() // shared with the SchemeHandler (serves /book/…)
     private let work = DispatchQueue(label: "com.euspell.eupub.bridge")
     private lazy var lexicon = Lexicon()
 
     private let wwwRoot = Bundle.main.resourceURL!.appendingPathComponent("www")
-    private var bookRoot: URL { wwwRoot.appendingPathComponent("book") }
     private var seeded = false
+
+    /// Where books are unzipped, in the app container (persists across launches).
+    private lazy var booksDir: URL = {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Eupub", isDirectory: true)
+        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        return base
+    }()
 
     // --- first-launch seeding -------------------------------------------------
     // Point the reader at the bundled sample so something renders; after that its
@@ -39,7 +49,8 @@ final class Bridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
 
         switch method {
         case "openPath":
-            work.async { self.handleOpenPath(id) }
+            let path = args.first as? String ?? "sample"
+            work.async { self.handleOpenPath(id, path) }
         case "lexiconSubset":
             let words = (args.first as? [Any])?.compactMap { $0 as? String } ?? []
             work.async { self.handleLexicon(id, words) }
@@ -47,37 +58,53 @@ final class Bridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
             let href = args.first as? String ?? ""
             DispatchQueue.main.async { self.handleOpenExternal(id, href) }
         case "pickEpub":
-            // Phase 1: no file import yet (needs a Swift unzip); resolve as
-            // "cancelled" so the reader stays on the current book.
-            resolve(id, ok: true, json: "null")
+            DispatchQueue.main.async { self.presentPicker(id) }
         default:
             resolve(id, ok: false, json: Self.errJson("unknown method \(method)"))
         }
     }
 
-    // openPath: the sample is pre-extracted into the bundle, so this only locates
-    // the OPF via container.xml — no unzip (arbitrary-file import comes later).
-    // Virtual rootDir "/book"; the scheme handler maps /book/<rel> → www/book/<rel>.
-    private func handleOpenPath(_ id: Int) {
+    // openPath: resolve the .epub (the "sample" sentinel → the bundled sample,
+    // any other value → a real file path), unzip it into the container, and
+    // return the book — the same path a user-picked book takes.
+    private func handleOpenPath(_ id: Int, _ path: String) {
+        let epubURL = path == "sample" ? wwwRoot.appendingPathComponent("sample.epub") : URL(fileURLWithPath: path)
+        guard FileManager.default.fileExists(atPath: epubURL.path) else {
+            resolve(id, ok: true, json: "null"); return // gone — reader falls back to welcome
+        }
         do {
-            let container = try String(contentsOf: bookRoot.appendingPathComponent("META-INF/container.xml"),
-                                       encoding: .utf8)
-            guard let opfRel = Self.firstMatch(in: container, pattern: #"full-path\s*=\s*["']([^"']+)["']"#) else {
-                throw Err.msg("Invalid EPUB: no rootfile in container.xml")
-            }
-            let opfXml = try String(contentsOf: bookRoot.appendingPathComponent(opfRel), encoding: .utf8)
-            let opfPath = "/book/" + opfRel
-            let book: [String: Any] = [
-                "sourcePath": "sample",
-                "rootDir": "/book",
-                "opfDir": (opfPath as NSString).deletingLastPathComponent,
-                "opfPath": opfPath,
-                "opfXml": opfXml,
-            ]
-            resolve(id, ok: true, json: Self.jsonString(book))
+            resolve(id, ok: true, json: Self.jsonString(try extractEpub(epubURL, sourcePath: path)))
         } catch {
             resolve(id, ok: false, json: Self.errJson(String(describing: error)))
         }
+    }
+
+    // Unzip an .epub into a fresh dir under the container, parse container.xml for
+    // the OPF, publish the dir to the SchemeHandler (served at /book/…), and
+    // return the book — the iOS analog of MainActivity.extractEpub. rootDir is the
+    // real container path; ios-bridge.js's fileURL() strips it to form /book/<rel>.
+    private func extractEpub(_ epubURL: URL, sourcePath: String) throws -> [String: Any] {
+        let dest = booksDir.appendingPathComponent("current", isDirectory: true)
+        try? FileManager.default.removeItem(at: dest)
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        try FileManager.default.unzipItem(at: epubURL, to: dest) // ZIPFoundation guards zip-slip
+
+        let containerXml = try String(contentsOf: dest.appendingPathComponent("META-INF/container.xml"),
+                                      encoding: .utf8)
+        guard let opfRel = Self.firstMatch(in: containerXml, pattern: #"full-path\s*=\s*["']([^"']+)["']"#) else {
+            throw Err.msg("Invalid EPUB: no rootfile in container.xml")
+        }
+        let opfXml = try String(contentsOf: dest.appendingPathComponent(opfRel), encoding: .utf8)
+        bookStore.currentBookDir = dest
+
+        let opfPath = dest.path + "/" + opfRel
+        return [
+            "sourcePath": sourcePath,
+            "rootDir": dest.path,
+            "opfDir": (opfPath as NSString).deletingLastPathComponent,
+            "opfPath": opfPath,
+            "opfXml": opfXml,
+        ]
     }
 
     private func handleLexicon(_ id: Int, _ words: [String]) {
@@ -89,6 +116,50 @@ final class Bridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
             UIApplication.shared.open(url)
         }
         resolve(id, ok: true, json: "null")
+    }
+
+    // --- pickEpub (UIDocumentPicker) — the iOS analog of Android's SAF picker ---
+    private var pendingPickId: Int?
+
+    private func presentPicker(_ id: Int) {
+        guard let vc = topViewController() else { resolve(id, ok: true, json: "null"); return }
+        pendingPickId = id
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.epub])
+        picker.allowsMultipleSelection = false
+        picker.delegate = self
+        vc.present(picker, animated: true)
+    }
+
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        guard let id = pendingPickId else { return }
+        pendingPickId = nil
+        guard let src = urls.first else { resolve(id, ok: true, json: "null"); return }
+        work.async {
+            let scoped = src.startAccessingSecurityScopedResource()
+            defer { if scoped { src.stopAccessingSecurityScopedResource() } }
+            do {
+                // Copy into a persistent library dir so the reader's recents can
+                // reopen it later — the picked URL itself is a transient grant.
+                let library = self.booksDir.appendingPathComponent("library", isDirectory: true)
+                try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
+                let dest = library.appendingPathComponent(src.lastPathComponent)
+                try? FileManager.default.removeItem(at: dest)
+                try FileManager.default.copyItem(at: src, to: dest)
+                self.resolve(id, ok: true, json: Self.jsonString(try self.extractEpub(dest, sourcePath: dest.path)))
+            } catch {
+                self.resolve(id, ok: false, json: Self.errJson(String(describing: error)))
+            }
+        }
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        if let id = pendingPickId { pendingPickId = nil; resolve(id, ok: true, json: "null") }
+    }
+
+    private func topViewController() -> UIViewController? {
+        var vc = webView?.window?.rootViewController
+        while let presented = vc?.presentedViewController { vc = presented }
+        return vc
     }
 
     // --- settle a pending JS promise -----------------------------------------

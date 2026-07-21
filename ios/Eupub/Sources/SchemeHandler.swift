@@ -12,6 +12,9 @@ import Foundation
 /// are fetches, so this is required, not cosmetic.
 final class SchemeHandler: NSObject, WKURLSchemeHandler {
     private let wwwRoot = Bundle.main.resourceURL!.appendingPathComponent("www")
+    private let bookStore: BookStore
+
+    init(bookStore: BookStore) { self.bookStore = bookStore }
 
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
         guard let url = task.request.url else {
@@ -38,21 +41,33 @@ final class SchemeHandler: NSObject, WKURLSchemeHandler {
 
     func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {}
 
-    /// Map a served path to a bundle file, guarding against traversal out of www/.
+    /// Map a served path to a file:
+    ///   /book/<rel>    → the current book's extraction dir (app container)
+    ///   /assets/<rel>  → the bundle's www/ (reader/, engine/)
+    /// guarding against traversal out of the respective root.
     private func mapToFile(_ path: String) -> URL? {
+        if path.hasPrefix("/book/") {
+            guard let bookDir = bookStore.currentBookDir else { return nil }
+            let rel = String(path.dropFirst("/book/".count)).removingPercentEncoding
+                ?? String(path.dropFirst("/book/".count))
+            return within(bookDir, rel)
+        }
         var rel: String
         if path.hasPrefix("/assets/") {
             rel = String(path.dropFirst("/assets/".count))
-        } else if path.hasPrefix("/book/") {
-            rel = "book/" + String(path.dropFirst("/book/".count))
         } else if path == "/" || path.isEmpty {
             rel = "reader/index.html"
         } else {
             rel = String(path.drop(while: { $0 == "/" }))
         }
         rel = rel.removingPercentEncoding ?? rel
-        let candidate = wwwRoot.appendingPathComponent(rel).standardizedFileURL
-        guard candidate.path == wwwRoot.path || candidate.path.hasPrefix(wwwRoot.path + "/") else { return nil }
+        return within(wwwRoot, rel)
+    }
+
+    /// Resolve `rel` under `root`, rejecting anything that escapes it.
+    private func within(_ root: URL, _ rel: String) -> URL? {
+        let candidate = root.appendingPathComponent(rel).standardizedFileURL
+        guard candidate.path == root.path || candidate.path.hasPrefix(root.path + "/") else { return nil }
         return candidate
     }
 

@@ -16,10 +16,22 @@ struct ReaderView: UIViewRepresentable {
         // Persistent store — the whole point of the origin spike. .nonPersistent()
         // would wipe localStorage (position, bookmarks, prefs) every launch.
         config.websiteDataStore = .default()
-        config.setURLSchemeHandler(SchemeHandler(), forURLScheme: EUPUB_SCHEME)
+        config.setURLSchemeHandler(SchemeHandler(bookStore: context.coordinator.bookStore), forURLScheme: EUPUB_SCHEME)
 
         let controller = WKUserContentController()
         controller.add(context.coordinator, name: "eupub") // window.webkit.messageHandlers.eupub
+
+        // iOS-only safe-area insets for the reader chrome, injected here so the
+        // shared reader.css stays untouched. viewport-fit=cover (set in the iOS
+        // index.html) makes env(safe-area-inset-*) available; the toolbar/status
+        // bar backgrounds still bleed edge-to-edge, only their content insets in.
+        let safeArea = """
+        (function(){var s=document.createElement('style');\
+        s.textContent='#toolbar{padding-top:calc(env(safe-area-inset-top) + 6px) !important}\
+        #statusbar{padding-bottom:calc(env(safe-area-inset-bottom) + 4px) !important}';\
+        (document.head||document.documentElement).appendChild(s);})();
+        """
+        controller.addUserScript(WKUserScript(source: safeArea, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         config.userContentController = controller
 
         let webView = WKWebView(frame: .zero, configuration: config)
