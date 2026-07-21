@@ -216,6 +216,21 @@
     // alone. (See onSidebarWheel.)
     window.addEventListener('wheel', onSidebarWheel, { capture: true, passive: false });
 
+    // Page-turn direction must NOT follow the OS "natural scrolling" toggle (see
+    // viewer-runtime.js). deltaX's sign bakes that setting in and only the host
+    // can read it, so ask the desktop main for it; mobile has no such method and
+    // keeps the natural default. Re-checked on focus since the user may flip the
+    // setting in System Settings and switch back.
+    const refreshScrollDir = () => {
+      const get = window.eupub && window.eupub.getNaturalScroll;
+      if (typeof get !== 'function') return;
+      Promise.resolve(get())
+        .then((v) => { if (typeof v === 'boolean') window.__eupubNaturalScroll = v; })
+        .catch(() => {});
+    };
+    refreshScrollDir();
+    window.addEventListener('focus', refreshScrollDir);
+
     for (const tab of document.querySelectorAll('.tab')) {
       tab.addEventListener('click', () => switchTab(tab.dataset.tab));
     }
@@ -672,7 +687,8 @@
     e.preventDefault();
     // Horizontal-dominant swipes only — see viewer-runtime.js's wheel handler.
     if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-    const d = e.deltaX;
+    // Normalize away the OS natural-scrolling setting — see viewer-runtime.js.
+    const d = window.__eupubNaturalScroll === false ? -e.deltaX : e.deltaX;
     if (Math.abs(d) < 8) return;
     // Only a qualifying event extends the burst — see viewer-runtime.js for why.
     clearTimeout(tocWheelIdle);
