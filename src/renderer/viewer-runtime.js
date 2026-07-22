@@ -442,15 +442,20 @@ window.EupubViewerRuntime = function () {
   var wheelIdle = null;
   var wheelActedThisBurst = false;
   document.addEventListener('wheel', function (e) {
-    // Horizontal-dominant swipes only — vertical swipes are left alone (no
-    // scrollable content to move anyway) rather than accidentally paging.
-    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    var horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+    // Normally page only on horizontal-dominant swipes — vertical swipes have no
+    // scrollable content to move. But a SINGLE-page section (a full-bleed cover, a
+    // short title page) has nothing to page within it, so a vertical swipe would do
+    // nothing and leave the reader unable to swipe past it. There, let either axis
+    // turn the page — the turn falls through to the next section.
+    if (!horizontal && pageCount > 1) return;
+    var raw = horizontal ? e.deltaX : e.deltaY;
     // Normalize away the OS "natural scrolling" setting so a physical swipe-left
-    // is ALWAYS "next". deltaX's sign already bakes that setting in, and only the
-    // host can read it: window.__eupubNaturalScroll (set from the desktop main;
-    // undefined → natural, the mobile/default-macOS convention). Classic scroll
-    // (=== false) flips the sign back, so page direction stops depending on it.
-    var d = window.__eupubNaturalScroll === false ? -e.deltaX : e.deltaX;
+    // (or, on a single-page section, swipe-up) is ALWAYS "next". The sign already
+    // bakes that setting in, and only the host can read it:
+    // window.__eupubNaturalScroll (set from the desktop main; undefined → natural,
+    // the mobile/default-macOS convention). Classic scroll (=== false) flips it.
+    var d = window.__eupubNaturalScroll === false ? -raw : raw;
     if (Math.abs(d) < 8) return;
     // Only a qualifying event extends the burst. Trackpad momentum keeps
     // firing (mostly trivial) wheel events for a second-plus after the fingers

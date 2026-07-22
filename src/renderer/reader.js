@@ -703,9 +703,28 @@
   function updateNavState() {
     els.prev.disabled = state.index <= 0 && state.page <= 0;
     els.next.disabled = state.index >= state.model.spine.length - 1 && state.page >= state.pages - 1;
-    const chapter = `Ch ${state.index + 1}/${state.model.spine.length}`;
-    setStatus('right', `${chapter} · p ${state.page + 1}/${state.pages}`);
+    setStatus('right', `${chapterCounter()} · p ${state.page + 1}/${state.pages}`);
     updateProgress();
+  }
+
+  // The chapter number/total from the TOC's top-level entries — so the count
+  // reflects real chapters, not spine files. The spine also lists the cover,
+  // title, copyright, contents, … so "chapter 5" can be spine item 13 of 19.
+  // Uses the shallowest-depth navigable TOC entries (a nested TOC's sub-sections
+  // don't inflate it) and finds which one the current position falls in; "Ch 0"
+  // means front matter before the first chapter. Falls back to the spine position
+  // when there's no real nav TOC (a spine-derived TOC is 1:1 with files anyway).
+  function chapterCounter() {
+    const navigable = (state.model?.toc ?? []).filter((e) => e.spineIndex != null);
+    const minDepth = navigable.reduce((m, e) => Math.min(m, e.depth), Infinity);
+    const chapters = navigable.filter((e) => e.depth === minDepth);
+    if (chapters.length < 2) return `Ch ${state.index + 1}/${state.model.spine.length}`;
+    let ci = -1;
+    for (const c of chapters) {
+      if (c.spineIndex <= state.index) ci++;
+      else break;
+    }
+    return `Ch ${ci + 1}/${chapters.length}`;
   }
 
   // Whole-book reading progress as a percentage, weighted by chapter text length.
