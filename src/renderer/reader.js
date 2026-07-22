@@ -222,15 +222,8 @@
     // can read it, so ask the desktop main for it; mobile has no such method and
     // keeps the natural default. Re-checked on focus since the user may flip the
     // setting in System Settings and switch back.
-    const refreshScrollDir = () => {
-      const get = window.eupub && window.eupub.getNaturalScroll;
-      if (typeof get !== 'function') return;
-      Promise.resolve(get())
-        .then((v) => { if (typeof v === 'boolean') window.__eupubNaturalScroll = v; })
-        .catch(() => {});
-    };
-    refreshScrollDir();
-    window.addEventListener('focus', refreshScrollDir);
+    syncScrollDir();
+    window.addEventListener('focus', syncScrollDir);
 
     for (const tab of document.querySelectorAll('.tab')) {
       tab.addEventListener('click', () => switchTab(tab.dataset.tab));
@@ -493,7 +486,9 @@
         ? `window.EupubEngine.setLexicon(new Map(${jsonForScript(subset)}));` +
           `window.EupubEngine.walkTextNodes(document.body, window.EupubEngine.convert);`
         : '';
-    boot.textContent = `${reform}window.__eupubConfig=${jsonForScript(cfg)};(${state.runtimeSource})();`;
+    boot.textContent =
+      `window.__eupubNaturalScroll=${JSON.stringify(window.__eupubNaturalScroll ?? null)};` +
+      `${reform}window.__eupubConfig=${jsonForScript(cfg)};(${state.runtimeSource})();`;
     doc.body.appendChild(boot);
 
     return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
@@ -577,6 +572,27 @@
       @keyframes eupubflash { 0%,100%{ background:transparent } 12%,55%{ background:rgba(255,214,82,0.5) } }`;
   }
 
+  // Fetch the OS scroll direction from the host and publish it to BOTH the reader
+  // window and the live chapter iframe — the page-turn handler lives in the iframe,
+  // so the value must reach it (this was the bug: it was only set on the reader
+  // window). Called at init, on focus (the setting may be toggled and the app
+  // refocused), and whenever a chapter reports ready, so timing can't strand it.
+  function syncScrollDir() {
+    const get = window.eupub && window.eupub.getNaturalScroll;
+    if (typeof get !== 'function') return;
+    Promise.resolve(get())
+      .then((v) => {
+        if (typeof v !== 'boolean') return;
+        window.__eupubNaturalScroll = v;
+        try {
+          if (els.iframe.contentWindow) els.iframe.contentWindow.__eupubNaturalScroll = v;
+        } catch {
+          /* cross-realm access — ignore */
+        }
+      })
+      .catch(() => {});
+  }
+
   // --- messages from the chapter --------------------------------------
 
   function onChapterMessage(e) {
@@ -594,7 +610,10 @@
         // After a chapter loads (e.g. via a TOC/bookmark/search click, which
         // leaves focus on a sidebar element), hand keyboard focus to the reader
         // so arrow keys page the text instead of moving/scrolling the TOC.
-        if (m.type === 'eupub:ready') focusReader();
+        if (m.type === 'eupub:ready') {
+          focusReader();
+          syncScrollDir(); // make sure this freshly-ready iframe has the scroll dir
+        }
         break;
       case 'eupub:navigate': {
         const target = String(m.href).split('#')[0];

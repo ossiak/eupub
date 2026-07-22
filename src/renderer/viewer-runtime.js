@@ -453,8 +453,10 @@ window.EupubViewerRuntime = function () {
     // Normalize away the OS "natural scrolling" setting so a physical swipe-left
     // (or, on a single-page section, swipe-up) is ALWAYS "next". The sign already
     // bakes that setting in, and only the host can read it:
-    // window.__eupubNaturalScroll (set from the desktop main; undefined → natural,
-    // the mobile/default-macOS convention). Classic scroll (=== false) flips it.
+    // window.__eupubNaturalScroll (reader.js injects it into this iframe, and the
+    // desktop main reads the OS setting; undefined → natural, the mobile/default
+    // convention). Classic scroll (=== false) flips the sign so swipe-left stays
+    // "next" regardless of the setting.
     var d = window.__eupubNaturalScroll === false ? -raw : raw;
     if (Math.abs(d) < 8) return;
     // Only a qualifying event extends the burst. Trackpad momentum keeps
