@@ -264,6 +264,27 @@ app.whenReady().then(async () => {
     return { storedLen: stored.length, opened, first, recentCount: labels.length, firstLabel: labels[0] || '', closed };
   })()`);
 
+  // The TOC comes from the EPUB nav rather than a chapter, so it does not pass
+  // through the chapter pipeline and needs reforming of its own. Check both
+  // states: reformed while euspell is on, back to the original when toggled off.
+  const toc = await win.webContents.executeJavaScript(`(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    document.querySelector('.tab[data-tab="toc"]').click();
+    const read = () => [...document.getElementById('panel-toc').children].map((a) => a.textContent);
+    for (let i = 0; i < 40; i++) {           // wait for the async subset load
+      if (read().some((t) => /Qhapter/.test(t))) break;
+      await sleep(100);
+    }
+    const on = read();
+    const box = document.getElementById('euspell-checkbox');
+    box.checked = false; box.dispatchEvent(new Event('change', { bubbles: true }));
+    for (let i = 0; i < 20; i++) { if (read().some((t) => /Chapter/.test(t))) break; await sleep(50); }
+    const off = read();
+    box.checked = true; box.dispatchEvent(new Event('change', { bubbles: true }));
+    for (let i = 0; i < 20; i++) { if (read().some((t) => /Qhapter/.test(t))) break; await sleep(50); }
+    return { on, off, back: read() };
+  })()`);
+
   // Wheel-over-Contents (run last — it advances the chapter). The wheel must be
   // prevented (TOC won't scroll) and must page the book past the 1-page ch1 to ch2.
   const wheel = await win.webContents.executeJavaScript(`(async () => {
@@ -311,6 +332,16 @@ app.whenReady().then(async () => {
       'progress-percent',
       /^\d+%$/.test(result.progressText) && parseInt(result.progressText, 10) >= 0 && parseInt(result.progressText, 10) <= 100,
       'progress="' + result.progressText + '"',
+    ],
+    [
+      'toc-reformed',
+      toc.on.join('|') === 'Qhapter Wun|Qhapter Twu',
+      'labels="' + toc.on.join(' | ') + '"',
+    ],
+    [
+      'toc-respects-toggle',
+      toc.off.join('|') === 'Chapter One|Chapter Two' && toc.back.join('|') === 'Qhapter Wun|Qhapter Twu',
+      'off="' + toc.off.join(' | ') + '" back="' + toc.back.join(' | ') + '"',
     ],
     ['toc-wheel-paginates', wheel.prevented && wheel.advanced, 'prevented=' + wheel.prevented + ' advanced=' + wheel.advanced],
     ['recent-stored', recentMenu.storedLen >= 1, 'recent=' + recentMenu.storedLen],

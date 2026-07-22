@@ -224,6 +224,7 @@
       prefs.euspell = els.euspell.checked;
       savePrefs();
       reRenderKeepingPlace();
+      applyTocSpelling();
     });
 
     // Over the Contents sidebar the wheel paginates the book rather than
@@ -964,6 +965,7 @@
     for (const entry of state.model.toc) {
       const a = document.createElement('a');
       a.textContent = entry.label;
+      a.dataset.label = entry.label; // original, so euspell can be toggled off
       a.className = `depth-${entry.depth}`;
       a.dataset.index = entry.spineIndex ?? '';
       a.addEventListener('click', (e) => {
@@ -975,6 +977,44 @@
       });
       els.panelToc.appendChild(a);
     }
+    applyTocSpelling();
+  }
+
+  // The TOC comes from the EPUB nav, not a chapter, so it isn't reformed by the
+  // chapter pipeline. Reform each label in place through the reader-side engine —
+  // the same path search uses — respecting the euspell toggle. Guarded by a token
+  // so a book switch (or a rapid toggle) can't let a stale async result land.
+  let tocSpellToken = 0;
+  async function applyTocSpelling() {
+    const anchors = [...els.panelToc.children];
+    if (!anchors.length) return;
+    const token = ++tocSpellToken;
+    if (!prefs.euspell || !state.engineSource) {
+      for (const a of anchors) a.textContent = a.dataset.label; // show originals
+      return;
+    }
+    ensureEngine();
+    if (!window.EupubEngine) return;
+    try {
+      // Gather the labels' own vocab and load just that subset (the reader engine
+      // is lexicon-excluded), mirroring how a chapter is reformed.
+      const html = anchors.map((a) => `<div>${escapeHtml(a.dataset.label)}</div>`).join('');
+      const subset = await window.eupub.lexiconSubset([...chapterVocab(html)]);
+      if (token !== tocSpellToken) return; // superseded by a newer render/toggle
+      window.EupubEngine.setLexicon(new Map(subset));
+      for (const a of anchors) a.textContent = reformString(a.dataset.label);
+    } catch {
+      /* leave the originals on any failure */
+    }
+  }
+
+  // Reform a plain string through the engine's block pipeline via a detached,
+  // reader-owned element. Assumes the lexicon subset is already installed.
+  function reformString(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    window.EupubEngine.walkTextNodes(div, window.EupubEngine.convert);
+    return div.textContent;
   }
 
   function highlightToc() {
