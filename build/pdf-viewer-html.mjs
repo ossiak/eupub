@@ -17,8 +17,10 @@ export function generateViewerHtml(extDir, bridgeScriptTags) {
 
   // (a) Drop the header bar. Its "Open original" link would navigate the host
   //     frame to the raw PDF, and a chrome-free page is what an embed under the
-  //     reader's own toolbar wants. viewer.js null-guards #filename/#original,
-  //     so removing them needs no JS change.
+  //     reader's own toolbar wants — which owns the page readout and any
+  //     download/print affordances itself. viewer.js null-guards every element
+  //     in the bar (#filename, #original, #pagecount, #download, #print), so
+  //     removing them needs no JS change.
   if (!/<header id="bar">[\s\S]*?<\/header>\s*/.test(html)) {
     throw new Error('pdf/viewer.html: <header id="bar"> not found');
   }
