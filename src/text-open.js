@@ -22,19 +22,28 @@ function openText(filePath) {
     .replace(/\r\n?/g, '\n'); // normalize newlines
   const title = titleFromPath(filePath);
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eupub-'));
+  try {
+    const chapters = splitChapters(raw);
+    const files = chapters.map((_, i) => `chapter-${String(i + 1).padStart(4, '0')}.xhtml`);
+    chapters.forEach((ch, i) => {
+      fs.writeFileSync(path.join(rootDir, files[i]), chapterHtml(ch, title), 'utf8');
+    });
+    fs.writeFileSync(path.join(rootDir, 'nav.xhtml'), navXhtml(chapters, files, title), 'utf8');
 
-  const chapters = splitChapters(raw);
-  const files = chapters.map((_, i) => `chapter-${String(i + 1).padStart(4, '0')}.xhtml`);
-  chapters.forEach((ch, i) => {
-    fs.writeFileSync(path.join(rootDir, files[i]), chapterHtml(ch, title), 'utf8');
-  });
-  fs.writeFileSync(path.join(rootDir, 'nav.xhtml'), navXhtml(chapters, files, title), 'utf8');
+    const opfXml = buildOpf(title, files, `eupub-text-${path.basename(filePath)}`);
+    const opfPath = path.join(rootDir, 'content.opf');
+    fs.writeFileSync(opfPath, opfXml, 'utf8');
 
-  const opfXml = buildOpf(title, files, `eupub-text-${path.basename(filePath)}`);
-  const opfPath = path.join(rootDir, 'content.opf');
-  fs.writeFileSync(opfPath, opfXml, 'utf8');
-
-  return { sourcePath: filePath, rootDir, opfDir: rootDir, opfPath, opfXml };
+    return { sourcePath: filePath, rootDir, opfDir: rootDir, opfPath, opfXml };
+  } catch (err) {
+    // Don't leave a half-written dir for the stale sweep (same as epub-extract).
+    try {
+      fs.rmSync(rootDir, { recursive: true, force: true });
+    } catch {
+      /* best effort */
+    }
+    throw err;
+  }
 }
 
 /** Decode a text file without assuming UTF-8: UTF-16 BOMs first (Windows

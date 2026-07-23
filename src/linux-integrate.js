@@ -51,10 +51,11 @@ function integrateAppImage() {
 
     // %F passes the double-clicked file(s) as LOCAL PATHS (the main process
     // reads them from argv — see main.js); %U could hand us URLs for remote
-    // locations, which %F makes the desktop environment localize first. Only
-    // claim application/epub+zip — not text/plain — so Eupub doesn't become a
-    // candidate handler for every .txt. TryExec hides the menu entry if the
-    // AppImage is later moved or deleted, instead of leaving a dead launcher.
+    // locations, which %F makes the desktop environment localize first. Claim
+    // EPUBs and PDFs (both open in the reader) but not text/plain, so Eupub
+    // doesn't become a candidate handler for every .txt. TryExec hides the menu
+    // entry if the AppImage is later moved or deleted, instead of leaving a
+    // dead launcher.
     const desktop =
       [
         '[Desktop Entry]',
@@ -66,7 +67,7 @@ function integrateAppImage() {
         'Icon=eupub',
         'Terminal=false',
         'Categories=Office;Viewer;',
-        'MimeType=application/epub+zip;',
+        'MimeType=application/epub+zip;application/pdf;',
         'StartupWMClass=eupub',
       ].join('\n') + '\n';
     fs.writeFileSync(path.join(appsDir, 'eupub.desktop'), desktop, 'utf8');

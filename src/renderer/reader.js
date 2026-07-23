@@ -28,6 +28,7 @@
     euspell: $('euspell-checkbox'),
     bookTitle: $('book-title'),
     iframe: $('chapter'),
+    pdf: $('pdf'),
     welcome: $('welcome'),
     statusLeft: $('status-left'),
     statusRight: $('status-right'),
@@ -141,10 +142,24 @@
       window.eupub.onOpenFile((filePath) => openRecent(filePath));
     }
 
+    // When the OS launched us WITH a book (double-clicked file), that book is
+    // arriving via onOpenFile — don't also auto-reopen the last book. The two
+    // loads would race: each open's cleanup deletes the previous extraction
+    // dir, so the losing load can end up reading chapters from a deleted dir.
+    // (Guarded: the Android bridge doesn't provide the check.)
+    let osOpen = false;
+    if (window.eupub.hasPendingOpen) {
+      try {
+        osOpen = await window.eupub.hasPendingOpen();
+      } catch {
+        /* older main without the channel — keep the auto-reopen */
+      }
+    }
+
     // Reopen the most recent book on launch. Fall back to the legacy single-slot
     // key so existing users keep their last book before any recent is recorded.
     const recents = loadRecents();
-    const last = (recents[0] && recents[0].path) || localStorage.getItem(LAST_KEY);
+    const last = osOpen ? null : (recents[0] && recents[0].path) || localStorage.getItem(LAST_KEY);
     if (last) {
       try {
         const book = await window.eupub.openPath(last);
@@ -159,6 +174,9 @@
   }
 
   function wireEvents() {
+    // The embedded PDF viewer's outline/position messages (PDF mode only).
+    window.addEventListener('message', handlePdfNav);
+
     // Toolbar Open is a menu: pick a file or reopen a recent one. The welcome
     // screen's Open is the bare picker (its own primary call to action).
     els.open.addEventListener('click', (e) => {
@@ -250,6 +268,7 @@
 
     window.addEventListener('message', onChapterMessage);
     window.addEventListener('keydown', (e) => {
+      if (state.pdf) return; // search and page nav are chapter-only
       // Ctrl/Cmd+F opens (or re-focuses) the book search from anywhere, incl.
       // while the input is already focused. F3 / Shift+F3 walk the hits.
       if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
@@ -293,12 +312,46 @@
       setStatus('left', 'That book could not be opened — removed from recent.');
       return;
     }
-    await loadBook(book);
+    try {
+      await loadBook(book);
+    } catch (err) {
+      // Without this, a book that opens in main but fails renderer-side (e.g. a
+      // corrupt OPF) is an unhandled rejection and the UI just goes quiet.
+      console.error(err);
+      setStatus('left', 'That book could not be loaded — it may be corrupt.');
+    }
   }
 
   async function loadBook(book) {
+    hideSelectionPopup();
+    // A PDF is a fixed-layout document, not a spine of chapters — it opens in the
+    // embedded PDF viewer rather than through EupubModel.
+    if (book && book.kind === 'pdf') return loadPdf(book);
+
+    // Leaving PDF mode (or never in it): restore the chapter view.
+    clearTimeout(pdfPosTimer); // a pending PDF save must not fire once state.pdf drops
+    state.pdf = false;
+    els.pdf.classList.add('hidden');
+    // Navigate the frame away to actually stop the viewer (canvases, worker,
+    // listeners). Removing the src attribute does NOT unload the document —
+    // the old viewer would keep running hidden.
+    if (els.pdf.getAttribute('src')) els.pdf.src = 'about:blank';
+    // Re-enable the toggle PDF mode disabled — but only if the engine loaded;
+    // with no engine the toggle would silently do nothing (see init).
+    els.euspell.disabled = !state.engineSource;
+    document.body.classList.remove('pdf-mode');
+
+    // Validate before committing any state: a book with no readable spine
+    // (malformed OPF, or nothing but non-linear items) would render a blank
+    // frame and crash chapter lookups downstream — refuse it and keep whatever
+    // book is currently open instead.
+    const model = await window.EupubModel.parseAsync(book);
+    if (!model.spine.length) {
+      setStatus('left', 'This book has no readable content.');
+      return;
+    }
     state.book = book;
-    state.model = await window.EupubModel.parseAsync(book);
+    state.model = model;
     for (const s of state.model.spine) s.fileURL = window.eupub.fileURL(s.absPath);
 
     // 'id:' prefix so an identifier can't collide with a path-shaped legacy key.
@@ -330,6 +383,170 @@
     go(start, { restore: state.currentLocator });
 
     computeCharCounts(book); // async; fills the progress %
+  }
+
+  // Open a PDF in the embedded viewer. The native host has already copied it into
+  // app storage and returned a served https URL (book.url); we point the iframe's
+  // ?file= at it. The viewer reforms and renders on its own. Toolbar controls that
+  // don't apply to a PDF yet are disabled (enableControls(false) leaves the Open
+  // menu), and per-book persistence early-returns while state.pdf is set. The
+  // reforming already happened in-viewer, so there is no chapter model here.
+  function loadPdf(book) {
+    // A pending debounced save belongs to the PREVIOUS document — flush it away
+    // before bookKey changes, or its page would be written under this book's key.
+    clearTimeout(pdfPosTimer);
+    state.pdf = true;
+    state.book = book;
+    state.model = null;
+    // No chapter is current in PDF mode: index -1 keeps the chapter-only paths
+    // (sidebar wheel paging, nav keys) inert, and a bumped render token makes an
+    // in-flight chapter render drop its result instead of overlaying the PDF.
+    state.index = -1;
+    state.page = 0;
+    state.pages = 1;
+    state.renderToken++;
+    state.bookKey = `pdf:${book.sourcePath}`;
+    state.pdfPages = 0;
+    els.bookTitle.textContent = book.title;
+    document.title = `${book.title} — Eupub`;
+    pushRecent(book.sourcePath, book.title);
+
+    // The viewer reports when it's laid out; restore the saved page then.
+    const saved = loadBookState(posKey, null);
+    state.pdfResume = saved && Number.isInteger(saved.page) ? saved.page : null;
+
+    enableControls(false);
+    els.euspell.disabled = true;
+    els.sidebarBtn.disabled = false; // the sidebar carries the TOC in PDF mode
+    document.body.classList.add('pdf-mode'); // hides the deferred (Marks/Notes/Search) tabs
+    // Force Contents active (a prior EPUB may have left another tab selected)
+    // without opening the sidebar — unlike switchTab, which reveals it.
+    for (const t of document.querySelectorAll('.tab')) t.classList.toggle('active', t.dataset.tab === 'toc');
+    for (const p of document.querySelectorAll('.panel')) p.classList.toggle('active', p.id === 'panel-toc');
+    els.sidebar.classList.add('hidden');
+    els.panelToc.replaceChildren();
+    els.panelBookmarks.replaceChildren();
+    els.panelHighlights.replaceChildren();
+    els.progress.textContent = '';
+    setStatus('left', '');
+    setStatus('right', ''); // clear any lingering EPUB chapter/page indicator
+
+    els.welcome.classList.add('hidden');
+    els.iframe.classList.add('hidden');
+    // Unload the chapter document rather than just hide it (the mirror of the
+    // pdf frame's about:blank on the way out): a hidden chapter keeps running —
+    // its resize to 0×0 alone fires the runtime's handler, which posts
+    // eupub:position back into PDF mode — and holds its DOM + engine in memory.
+    if (els.iframe.hasAttribute('srcdoc')) els.iframe.srcdoc = '';
+    // The viewer is served from the same private origin as the PDF itself
+    // (Android https://eupub.local — the reader's own origin there; desktop
+    // app://eupub — cross-origin to the file:// reader). Deriving it from
+    // book.url needs no platform sniffing, and pdfOrigin is what the nav
+    // messages and the bridge relay are checked/targeted against.
+    state.pdfOrigin = new URL(book.url).origin;
+    els.pdf.src = `${state.pdfOrigin}/assets/pdf/viewer.html?file=${encodeURIComponent(book.url)}`;
+    els.pdf.classList.remove('hidden');
+  }
+
+  // The PDF viewer runs in the #pdf iframe — same origin as the reader on
+  // Android (https://eupub.local), cross-origin on the desktop (app://eupub
+  // inside the file:// reader) — and reports its outline and current page over
+  // postMessage; we own the sidebar TOC, the status bar, and the saved
+  // position. Registered once; gated on the frame (source) plus the viewer's
+  // known origin, both derived when the PDF loads.
+  function handlePdfNav(e) {
+    if (!state.pdf || e.source !== els.pdf.contentWindow || e.origin !== state.pdfOrigin) return;
+    const d = e.data || {};
+    // Desktop only: the viewer page has no preload, so its bridge relays native
+    // calls here over android-bridge's wire protocol (src/desktop-pdf-bridge.js)
+    // and we service them via our own window.eupub. On Android the top frame's
+    // android-bridge services these same messages — skip to avoid doubling.
+    if (d.__eupubCall && !window.AndroidBridge) {
+      serviceViewerCall(d);
+      return;
+    }
+    if (typeof d.eupubPdf !== 'string') return;
+    if (d.eupubPdf === 'ready') {
+      state.pdfPages = d.pages || 0;
+      renderPdfToc(d.outline || []);
+      // != null: a saved page 0 is falsy but real. Consumed once — a later
+      // 'ready' (viewer reload) must not yank the reader back to the resume.
+      if (state.pdfResume != null) postGoto(state.pdfResume);
+      state.pdfResume = null;
+    } else if (d.eupubPdf === 'position') {
+      state.pdfPages = d.pages || state.pdfPages;
+      // Mirror the EPUB layout: overall percent in the toolbar, granular page
+      // position in the footer.
+      els.progress.textContent = `${d.pct}%`;
+      setStatus('right', `page ${d.page + 1} of ${d.pages}`);
+      highlightPdfToc(d.page);
+      savePdfPosition(d.page);
+    }
+  }
+
+  function postGoto(page) {
+    els.pdf.contentWindow?.postMessage({ eupubPdfCmd: true, goto: page }, state.pdfOrigin);
+  }
+
+  // Service one relayed native call from the desktop viewer frame. Strictly
+  // whitelisted — the viewer needs exactly lexiconSubset; anything else is
+  // refused rather than forwarded to the preload bridge.
+  const VIEWER_CALLS = new Set(['lexiconSubset']);
+  function serviceViewerCall(d) {
+    const reply = (ok, value, error) =>
+      els.pdf.contentWindow?.postMessage({ __eupubReply: true, callId: d.callId, ok, value, error }, state.pdfOrigin);
+    if (!VIEWER_CALLS.has(d.method)) {
+      reply(false, null, 'method not allowed: ' + d.method);
+      return;
+    }
+    Promise.resolve()
+      .then(() => window.eupub[d.method](...(d.args || [])))
+      .then(
+        (value) => reply(true, value),
+        (err) => reply(false, null, err && err.message ? err.message : String(err))
+      );
+  }
+
+  function renderPdfToc(outline) {
+    els.panelToc.innerHTML = '';
+    if (!outline.length) {
+      const p = document.createElement('p');
+      p.className = 'toc-empty';
+      p.textContent = 'No contents in this PDF.';
+      els.panelToc.appendChild(p);
+      return;
+    }
+    for (const entry of outline) {
+      const a = document.createElement('a');
+      a.textContent = entry.title;
+      // Outline depth is 0-based; the TOC CSS is 1-based (depth-2/3 indent),
+      // capped at 3 so deep nesting reuses the deepest existing style.
+      a.className = `depth-${Math.min(entry.depth + 1, 3)}`;
+      a.dataset.page = String(entry.page);
+      a.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        postGoto(entry.page);
+        closeSidebarIfSmall();
+      });
+      els.panelToc.appendChild(a);
+    }
+  }
+
+  // Mark the last TOC entry at or before the current page (its section).
+  function highlightPdfToc(page) {
+    let best = null;
+    for (const a of els.panelToc.children) {
+      if (a.dataset.page != null && Number(a.dataset.page) <= page) best = a;
+    }
+    for (const a of els.panelToc.children) a.classList.toggle('active', a === best);
+  }
+
+  let pdfPosTimer = 0;
+  function savePdfPosition(page) {
+    clearTimeout(pdfPosTimer);
+    pdfPosTimer = setTimeout(() => {
+      if (state.pdf && state.bookKey) localStorage.setItem(posKey(state.bookKey), JSON.stringify({ page }));
+    }, 800);
   }
 
   // Reads every spine document once and records its visible-text length, so
@@ -378,7 +595,7 @@
   // Re-render the current chapter while keeping the reader's place (used after a
   // font/theme/euspell/view change).
   function reRenderKeepingPlace() {
-    if (state.index < 0) return;
+    if (state.pdf || state.index < 0) return;
     renderChapter(state.index, { restore: state.currentLocator });
   }
 
@@ -436,12 +653,11 @@
   }
 
   function buildSrcdoc(html, baseHref, cfg, subset) {
-    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const doc = parseChapterDoc(html);
 
     for (const m of doc.querySelectorAll('meta[http-equiv]')) {
       if (/content-security-policy/i.test(m.getAttribute('http-equiv') || '')) m.remove();
     }
-    sanitizeChapterDoc(doc);
 
     let head = doc.head;
     if (!head) {
@@ -477,7 +693,7 @@
       noAuto.textContent = 'window.__eupubNoAuto=true;';
       doc.body.appendChild(noAuto);
       const engine = doc.createElement('script');
-      engine.textContent = state.engineSource;
+      engine.textContent = scriptSafe(state.engineSource);
       doc.body.appendChild(engine);
     }
     const boot = doc.createElement('script');
@@ -486,9 +702,9 @@
         ? `window.EupubEngine.setLexicon(new Map(${jsonForScript(subset)}));` +
           `window.EupubEngine.walkTextNodes(document.body, window.EupubEngine.convert);`
         : '';
-    boot.textContent =
+    boot.textContent = scriptSafe(
       `window.__eupubNaturalScroll=${JSON.stringify(window.__eupubNaturalScroll ?? null)};` +
-      `${reform}window.__eupubConfig=${jsonForScript(cfg)};(${state.runtimeSource})();`;
+      `${reform}window.__eupubConfig=${jsonForScript(cfg)};(${state.runtimeSource})();`);
     doc.body.appendChild(boot);
 
     return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
@@ -499,6 +715,30 @@
   // "</script>" can't close the boot script and inject markup of its own.
   function jsonForScript(value) {
     return JSON.stringify(value).replace(/</g, '\\u003c');
+  }
+
+  // Script source safe to survive the srcdoc serialize→parse round trip: a
+  // literal "</script" would terminate the tag early and turn the rest into
+  // markup. In valid JS it can only occur inside string/regex literals, where
+  // "<\/script" is byte-for-byte equivalent.
+  function scriptSafe(source) {
+    return source.replace(/<\/script/gi, '<\\/script');
+  }
+
+  // Parse an untrusted chapter into an inert Document, sanitized in two passes:
+  // DOMPurify over the string first — its output is hardened against the
+  // serialize→reparse mutations (mXSS) that defeat DOM-walking sanitizers —
+  // then sanitizeChapterDoc for the app-specific vectors it doesn't cover
+  // (meta refresh, form actions). WHOLE_DOCUMENT keeps head/body; <link> is
+  // allowed back in because chapters load their stylesheets with it. A missing
+  // DOMPurify (a stale Android asset bundle) degrades to the second pass alone.
+  function parseChapterDoc(html) {
+    if (window.DOMPurify) {
+      html = window.DOMPurify.sanitize(html, { WHOLE_DOCUMENT: true, ADD_TAGS: ['link'] });
+    }
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    sanitizeChapterDoc(doc);
+    return doc;
   }
 
   // Strip anything executable from an untrusted chapter document. The srcdoc
@@ -598,6 +838,10 @@
   function onChapterMessage(e) {
     // Only the current chapter iframe may drive the reader.
     if (e.source !== els.iframe.contentWindow) return;
+    // No model means no chapter is current (PDF mode, or between books) — every
+    // case below reads state.model, so a late message from a torn-down chapter
+    // must not get past this point.
+    if (!state.model) return;
     const m = e.data || {};
     switch (m.type) {
       case 'eupub:ready':
@@ -617,7 +861,11 @@
         break;
       case 'eupub:navigate': {
         const target = String(m.href).split('#')[0];
-        const frag = String(m.href).split('#')[1] || '';
+        // m.href is a resolved URL, so the fragment arrives percent-encoded —
+        // but gotoFragment matches raw ids (getElementById). Decode, tolerating
+        // a literal "%" in the id.
+        let frag = String(m.href).split('#')[1] || '';
+        try { frag = decodeURIComponent(frag); } catch { /* literal % — use as is */ }
         const idx = state.model.spine.findIndex((s) => s.fileURL === target);
         if (idx !== -1) go(idx, { fragment: frag });
         break;
@@ -1028,11 +1276,10 @@
     } catch {
       /* unreadable chapter — index it as empty */
     }
-    const doc = new DOMParser().parseFromString(html, 'text/html');
     // Full sanitize, not just script removal: importNode below adopts these
     // elements into THIS document, where a surviving onerror handler on an <img>
     // could fire in the reader's own realm.
-    sanitizeChapterDoc(doc);
+    const doc = parseChapterDoc(html);
     blocks = [];
     if (doc.body) {
       let refBody = null;
@@ -1110,8 +1357,7 @@
   function chapterVocab(html) {
     const words = new Set();
     if (!window.EupubEngine) return words;
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    sanitizeChapterDoc(doc);
+    const doc = parseChapterDoc(html);
     if (!doc.body) return words;
     try {
       const clone = document.importNode(doc.body, true); // reader-owned copy
@@ -1249,14 +1495,18 @@
 
   // --- persistence ----------------------------------------------------
 
+  // A PDF has no bookKey and no per-position/bookmark/highlight state yet, so
+  // these no-op in PDF mode rather than writing under an undefined key.
   function savePosition() {
-    if (!state.book) return;
+    if (!state.book || state.pdf) return;
     localStorage.setItem(posKey(state.bookKey), JSON.stringify({ index: state.index, locator: state.currentLocator }));
   }
   function saveBookmarks() {
+    if (state.pdf) return;
     localStorage.setItem(bmKey(state.bookKey), JSON.stringify(state.bookmarks));
   }
   function saveHighlights() {
+    if (state.pdf) return;
     localStorage.setItem(hlKey(state.bookKey), JSON.stringify(state.highlights));
   }
   // Saved state for the current book: the stable identifier key first, then the
@@ -1270,11 +1520,22 @@
   }
   function loadPrefs() {
     const defaults = { euspell: true, fontSize: 14, theme: 'light', searchCaseSensitive: false };
+    let stored = {};
     try {
-      return Object.assign(defaults, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}'));
+      stored = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') || {};
     } catch {
-      return defaults;
+      /* corrupt JSON — fall back to defaults */
     }
+    // Coerce each field: a corrupt store (e.g. a string fontSize) must not leak
+    // into arithmetic ("14" + 1 → "141") or produce an unknown theme.
+    const p = Object.assign({}, defaults, stored);
+    p.euspell = !!p.euspell;
+    p.searchCaseSensitive = !!p.searchCaseSensitive;
+    p.fontSize = Number(p.fontSize);
+    if (!Number.isFinite(p.fontSize)) p.fontSize = defaults.fontSize;
+    p.fontSize = Math.max(12, Math.min(30, Math.round(p.fontSize)));
+    if (p.theme !== 'dark' && p.theme !== 'light') p.theme = defaults.theme;
+    return p;
   }
   function savePrefs() {
     localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));

@@ -24,8 +24,17 @@
 
     // dc:identifier — a stable key for per-book saved state (position,
     // bookmarks, highlights) that survives the file being moved or renamed.
-    const identifier =
-      text(doc.querySelector('metadata > identifier, metadata identifier')) || '';
+    // Prefer the identifier the package names via unique-identifier (books
+    // often carry several — ISBN and UUID — and OPF order is not stable);
+    // fall back to the first one.
+    let identifier = '';
+    const uidId = pkg.getAttribute('unique-identifier');
+    if (uidId) {
+      for (const el of doc.querySelectorAll('metadata identifier')) {
+        if (el.getAttribute('id') === uidId) { identifier = text(el); break; }
+      }
+    }
+    if (!identifier) identifier = text(doc.querySelector('metadata > identifier, metadata identifier')) || '';
 
     // Manifest: id -> { href (relative), absPath, mediaType, properties }.
     const manifest = new Map();
@@ -154,7 +163,7 @@
       if (!list) return;
       for (const li of list.children) {
         if (li.tagName.toLowerCase() !== 'li') continue;
-        const a = li.querySelector(':scope > a, :scope > span > a, :scope > a[href]');
+        const a = li.querySelector(':scope > a, :scope > span > a');
         if (a) {
           const { absPath, fragment } = hrefToPath(a.getAttribute('href'), navDir);
           out.push(makeEntry(label(a), absPath, fragment, depth, spine));
@@ -199,7 +208,9 @@
   function hrefToPath(href, baseDir) {
     if (!href) return { absPath: '', fragment: '' };
     const hashAt = href.indexOf('#');
-    const fragment = hashAt === -1 ? '' : href.slice(hashAt + 1);
+    // Decoded like the file part below: fragments in nav/NCX hrefs may be
+    // percent-encoded, but they're matched against raw ids (getElementById).
+    const fragment = hashAt === -1 ? '' : safeDecode(href.slice(hashAt + 1));
     const file = hashAt === -1 ? href : href.slice(0, hashAt);
     // A TOC entry pointing at a remote URL (legal in a nav, rare) has no local
     // file to open — leave it label-only (no absPath → no spine match → not

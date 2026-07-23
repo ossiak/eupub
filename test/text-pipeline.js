@@ -15,6 +15,7 @@ app.disableHardwareAcceleration();
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'eupub-test-')));
 
 ipcMain.handle('epub:openPath', (_e, p) => openText(p));
+ipcMain.handle('open:pending', () => false); // no OS-opened book in the harness
 ipcMain.handle('fs:readText', (_e, p) => fs.readFileSync(p, 'utf8'));
 ipcMain.handle('lexicon:subset', () => []); // no-op: this test uses its own full-engine srcdoc
 ipcMain.handle('engine:source', () =>

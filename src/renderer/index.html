@@ -12,7 +12,7 @@
                  style-src 'self' file: data: 'unsafe-inline';
                  img-src 'self' file: data: blob:;
                  font-src 'self' file: data:;
-                 frame-src 'self' file: data:;
+                 frame-src 'self' file: data: app:;
                  connect-src 'self' file: data:" />
   <title>Eupub</title>
   <link rel="stylesheet" href="reader.css" />
@@ -82,6 +82,11 @@
           PDF viewer converts each chapter — reused as-is, nothing re-implemented.</p>
       </div>
       <iframe id="chapter" class="chapter hidden" sandbox="allow-same-origin allow-scripts"></iframe>
+      <!-- PDF viewer, shown in place of #chapter when a PDF is opened. Not
+           sandboxed (unlike #chapter, which isolates untrusted EPUB markup):
+           this is our own first-party page, and it needs a plain same-origin
+           frame so the bridge, its module script, and the PDF.js worker run. -->
+      <iframe id="pdf" class="pdf hidden"></iframe>
       <div id="selection-popup" class="selection-popup hidden">
         <button id="hl-add" class="popup-btn">Highlight</button>
       </div>
@@ -93,6 +98,9 @@
     <span id="status-right"></span>
   </footer>
 
+  <!-- Vendored DOMPurify (build/copy-purify.js) — hardens chapter sanitizing
+       against mutation-XSS; reader.js falls back to its own pass if absent. -->
+  <script src="purify.js"></script>
   <script src="epub.js"></script>
   <script src="viewer-runtime.js"></script>
   <script src="reader.js"></script>

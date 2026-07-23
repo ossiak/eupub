@@ -1,7 +1,7 @@
 {
   "name": "eupub",
   "version": "0.1.0",
-  "description": "Eupub — a standalone Windows EPUB reader that renders books in euspell reformed spelling",
+  "description": "Eupub — a standalone EPUB/PDF/plain-text reader that renders books in euspell reformed spelling",
   "author": "Kamran Ossia",
   "license": "GPL-3.0-or-later",
   "main": "src/main.js",
@@ -12,7 +12,9 @@
     "build:engine": "rollup -c rollup.engine.config.mjs",
     "build:engine:mobile": "rollup -c rollup.engine.mobile.config.mjs",
     "build:lexicon": "node build/copy-lexicon.js",
-    "build": "npm run build:engine && npm run build:engine:mobile && npm run build:lexicon",
+    "build:pdf": "node build/copy-pdf-viewer.mjs",
+    "build:purify": "node build/copy-purify.js",
+    "build": "npm run build:engine && npm run build:engine:mobile && npm run build:lexicon && npm run build:pdf && npm run build:purify",
     "start": "npm run build && electron .",
     "dev": "electron .",
     "test": "node --test test/android-bridge.test.js && npm run build && electron test/pipeline.js && electron test/text-pipeline.js && electron test/features.js && electron test/reader-e2e.js",
@@ -32,7 +34,8 @@
     "rollup": "^4.0.0"
   },
   "dependencies": {
-    "adm-zip": "^0.5.17"
+    "adm-zip": "^0.5.17",
+    "dompurify": "^3.4.12"
   },
   "build": {
     "appId": "com.euspell.eupub",
@@ -45,6 +48,8 @@
       "src/**/*",
       "dist/eupub-engine.mobile.js",
       "dist/lexicon.mjs",
+      "dist/pdf/**",
+      "dist/pdfjs/**",
       "package.json",
       "!**/*.map"
     ],
@@ -61,7 +66,16 @@
         "nsis"
       ],
       "icon": "build/icon.ico",
-      "artifactName": "eupub-Setup-${version}.${ext}"
+      "artifactName": "eupub-Setup-${version}.${ext}",
+      "fileAssociations": [
+        {
+          "ext": "epub",
+          "name": "EPUB e-book",
+          "description": "EPUB e-book",
+          "mimeType": "application/epub+zip",
+          "role": "Viewer"
+        }
+      ]
     },
     "mac": {
       "target": [
@@ -86,7 +100,8 @@
       "icon": "build/icon.png",
       "category": "Office",
       "mimeTypes": [
-        "application/epub+zip"
+        "application/epub+zip",
+        "application/pdf"
       ],
       "desktop": {
         "entry": {
