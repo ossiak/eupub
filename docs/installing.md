@@ -6,23 +6,25 @@ and no server: the whole lexicon ships inside the app and every conversion
 happens locally. This page is for people installing a released build. To build it
 from source instead, see the [README](../README.md).
 
-It runs as a desktop app on **Windows**, **macOS**, and **Linux**, and as an
-early **Android** app.
+It runs as a desktop app on **Windows**, **macOS**, and **Linux**, an early
+**Android** app, and an **iOS** app for iPhone and iPad.
 
 ## Which download
 
-All builds live on the **Releases** page:
+The desktop and Android builds live on the **Releases** page; **iOS is on the App
+Store** (see [iOS](#ios) below).
 
 <https://github.com/ossiak/eupub/releases>
 
 Open the latest release and pick the file for your platform:
 
-| Platform | File | Kind |
+| Platform | Where | Kind |
 | --- | --- | --- |
 | **Windows** 10 / 11 (64-bit) | `eupub-Setup-<version>.exe` | Installer |
 | **macOS** (Apple Silicon) | `Eupub-<version>-arm64.dmg` | Disk image |
 | **Linux** (x86-64) | `Eupub-<version>.AppImage` | Single portable binary |
 | **Android** 8.0+ | `eupub-<version>.apk` | Sideloaded app (preview) |
+| **iOS** 17+ (iPhone & iPad) | App Store | Store app |
 
 > The Linux AppImage is built and attached automatically for every release. The
 > Windows installer, the macOS disk image, and the Android APK are added to the
@@ -109,6 +111,22 @@ update it by installing a newer APK by hand.
 
 Requires **Android 8.0 (Oreo) or newer**.
 
+## iOS
+
+Eupub for iPhone and iPad is on the **App Store** — Apple-reviewed and signed, so
+it installs like any other app, with no security prompts to override.
+
+1. Open the **App Store** on your iPhone or iPad and search **Eupub**, or open the
+   listing directly:
+   <https://apps.apple.com/app/eupub/id000000000> *(replace with the real App
+   Store link once published)*.
+2. Tap **Get** and install as usual.
+3. Open Eupub and add a book with the **Open** button — it uses the iOS document
+   picker, so books in Files, iCloud Drive, and other providers all work.
+
+Requires **iOS 17 or later**, on iPhone or iPad. Updates arrive through the App
+Store automatically.
+
 ## First run — reading in euspell
 
 - **Open a book** with the app's **Open** button, or (desktop) by double-clicking
@@ -117,7 +135,7 @@ Requires **Android 8.0 (Oreo) or newer**.
   the current chapter in place, keeping your spot. Off shows the book's original
   spelling; on shows it reformed.
 - Page with **← / →**, space, the scroll wheel (desktop), or **swipe / tap the
-  side thirds** (Android). Font size and light/dark controls sit in the same
+  side thirds** (Android/iOS). Font size and light/dark controls sit in the same
   chrome, and **bookmarks, highlights, and book-wide search** are in the side
   tabs.
 
@@ -137,6 +155,8 @@ If there's no prebuilt file for your platform, or you want to run from source:
 - **Android** — the native project lives under [`android/`](../android/); build
   the APK with Gradle (`./gradlew assembleDebug`). Its port design is documented
   in [android-port.md](android-port.md).
+- **iOS** — built from a separate Xcode project (not in this repo) and shipped
+  through the App Store; there's no build step here.
 
 ## If something looks wrong
 
@@ -147,5 +167,6 @@ If there's no prebuilt file for your platform, or you want to run from source:
 | macOS: *"Eupub is damaged and can't be opened"* | Download quarantine, not damage. Run `xattr -dr com.apple.quarantine /Applications/Eupub.app`, then reopen. |
 | Linux: AppImage won't start / mount error | Install FUSE 2, or run `./Eupub-*.AppImage --appimage-extract-run`. Confirm it's executable (`chmod +x`). |
 | Android: *"App not installed"* or blocked | Allow **Install unknown apps** for the app opening the APK; in Play Protect choose **Install anyway**. Check the phone is Android 8.0+. |
+| iOS: can't find Eupub in the App Store | It needs **iOS 17 or later** — older iPhones/iPads won't see the listing. Check for an OS update (and your store region). |
 | A book opens in original spelling | Toggle euspell **on** in the reader chrome — it's a per-book setting that re-renders the chapter. |
 | A word looks wrong | Reforms are context-sensitive and a handful of ambiguous words are left unchanged deliberately — see the reform notes in the [README](../README.md). |

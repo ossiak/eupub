@@ -1,14 +1,14 @@
 # Eupub
 
 A standalone **EPUB and PDF reader** that renders books in **euspell** reformed
-spelling. It runs as an Electron desktop app on **Windows**, **macOS**, and **Linux**, and as a
-native **Android** app. Eupub reuses the euspell conversion engine **as-is** from the sibling
+spelling. It runs as an Electron desktop app on **Windows**, **macOS**, and **Linux**, and as native
+**Android** and **iOS** apps. Eupub reuses the euspell conversion engine **as-is** from the sibling
 [`euspell_ext`](../euspell_ext) project — the same `convert()` + `walkTextNodes()`
 pair that drives the browser extension and the PDF viewer. Nothing in the engine
 is re-implemented or modified here.
 
 > **Just want to install it?** See [docs/installing.md](docs/installing.md) for
-> per-platform steps (Windows, macOS, Linux, Android). The rest of this README is for
+> per-platform steps (Windows, macOS, Linux, Android, iOS). The rest of this README is for
 > building and hacking on it.
 
 ## How the reuse works
