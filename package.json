@@ -22,7 +22,8 @@
     "icon": "node build/make-icon.js",
     "package": "npm run build && node build/package.js",
     "dist": "npm run build && electron-builder --win nsis",
-    "dist:linux": "npm run build && electron-builder --linux AppImage"
+    "dist:linux": "npm run build && electron-builder --linux AppImage",
+    "dist:mac": "npm run build && electron-builder --mac dmg --arm64"
   },
   "devDependencies": {
     "@electron/packager": "^20.0.1",
@@ -75,6 +76,21 @@
           "role": "Viewer"
         }
       ]
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "build/icon.png",
+      "category": "public.app-category.book",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": false
+    },
+    "dmg": {
+      "artifactName": "Eupub-${version}-${arch}.${ext}"
     },
     "linux": {
       "target": [
