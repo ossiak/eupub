@@ -85,11 +85,11 @@ jobs:
             exit 1
           fi
 
-      # --publish never: on a git tag electron-builder auto-publishes (needs
-      # GH_TOKEN); we publish explicitly in the next step instead.
+      # dist:linux passes --publish never (see package.json) so electron-builder
+      # never auto-publishes on CI; the workflow publishes explicitly below.
       - name: Build AppImage
         working-directory: eupub
-        run: npm run dist:linux -- --publish never
+        run: npm run dist:linux
 
       - name: Publish release
         if: github.ref_type == 'tag'
@@ -179,7 +179,7 @@ jobs:
 
       - name: Build dmg
         working-directory: eupub
-        run: npm run dist:mac -- --publish never
+        run: npm run dist:mac
 
       - name: Publish release
         if: github.ref_type == 'tag'

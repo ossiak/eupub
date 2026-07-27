@@ -22,8 +22,8 @@
     "icon": "node build/make-icon.js",
     "package": "npm run build && node build/package.js",
     "dist": "npm run build && electron-builder --win nsis",
-    "dist:linux": "npm run build && electron-builder --linux AppImage",
-    "dist:mac": "npm run build && electron-builder --mac dmg --arm64"
+    "dist:linux": "npm run build && electron-builder --linux AppImage --publish never",
+    "dist:mac": "npm run build && electron-builder --mac dmg --arm64 --publish never"
   },
   "devDependencies": {
     "@electron/packager": "^20.0.1",
