@@ -85,9 +85,11 @@ jobs:
             exit 1
           fi
 
+      # --publish never: on a git tag electron-builder auto-publishes (needs
+      # GH_TOKEN); we publish explicitly in the next step instead.
       - name: Build AppImage
         working-directory: eupub
-        run: npm run dist:linux
+        run: npm run dist:linux -- --publish never
 
       - name: Publish release
         if: github.ref_type == 'tag'
@@ -110,11 +112,6 @@ jobs:
 
   dmg:
     runs-on: macos-latest # Apple Silicon runner, matching the --arm64 target
-    env:
-      CSC_LINK: ${{ secrets.CSC_LINK }}
-      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
     steps:
       - name: Check out eupub
         uses: actions/checkout@v4
@@ -152,21 +149,37 @@ jobs:
             exit 1
           fi
 
-      # Only when the notary key is configured: write the .p8 to a file for
-      # notarytool and switch build.mac.notarize on (committed default is false).
-      - name: Enable notarization
-        if: env.APPLE_API_KEY_ID != ''
+      # Configure code signing from secrets. With a Developer ID cert (CSC_LINK)
+      # the app is signed; without it we set CSC_IDENTITY_AUTO_DISCOVERY=false so
+      # electron-builder builds an UNSIGNED dmg rather than choking on an empty
+      # CSC_LINK. With a notary key (APPLE_API_KEY_ID) it also notarizes.
+      - name: Configure signing
         env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
-          mkdir -p "$RUNNER_TEMP/keys"
-          printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/keys/AuthKey.p8"
-          echo "APPLE_API_KEY=$RUNNER_TEMP/keys/AuthKey.p8" >> "$GITHUB_ENV"
-          node -e "const f='eupub/package.json',p=require('./'+f);p.build.mac.notarize=true;require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')"
+          if [ -n "$CSC_LINK" ]; then
+            echo "CSC_LINK=$CSC_LINK" >> "$GITHUB_ENV"
+            echo "CSC_KEY_PASSWORD=$CSC_KEY_PASSWORD" >> "$GITHUB_ENV"
+          else
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            echo "No signing cert configured -- building an unsigned dmg."
+          fi
+          if [ -n "$APPLE_API_KEY_ID" ]; then
+            mkdir -p "$RUNNER_TEMP/keys"
+            printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/keys/AuthKey.p8"
+            echo "APPLE_API_KEY=$RUNNER_TEMP/keys/AuthKey.p8" >> "$GITHUB_ENV"
+            echo "APPLE_API_KEY_ID=$APPLE_API_KEY_ID" >> "$GITHUB_ENV"
+            echo "APPLE_API_ISSUER=$APPLE_API_ISSUER" >> "$GITHUB_ENV"
+            node -e "const f='eupub/package.json',p=require('./'+f);p.build.mac.notarize=true;require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')"
+          fi
 
       - name: Build dmg
         working-directory: eupub
-        run: npm run dist:mac
+        run: npm run dist:mac -- --publish never
 
       - name: Publish release
         if: github.ref_type == 'tag'
