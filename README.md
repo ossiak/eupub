@@ -1,10 +1,15 @@
 # Eupub
 
-A standalone **Windows EPUB reader** that renders books in **euspell** reformed
-spelling. Eupub reuses the euspell conversion engine **as-is** from the sibling
+A standalone **EPUB and PDF reader** that renders books in **euspell** reformed
+spelling. It runs as an Electron desktop app on **Windows**, **macOS**, and **Linux**, and as native
+**Android** and **iOS** apps. Eupub reuses the euspell conversion engine **as-is** from the sibling
 [`euspell_ext`](../euspell_ext) project — the same `convert()` + `walkTextNodes()`
 pair that drives the browser extension and the PDF viewer. Nothing in the engine
 is re-implemented or modified here.
+
+> **Just want to install it?** See [docs/installing.md](docs/installing.md) for
+> per-platform steps (Windows, macOS, Linux, Android, iOS). The rest of this README is for
+> building and hacking on it.
 
 ## How the reuse works
 
@@ -54,24 +59,31 @@ anything under `euspell_ext/src` or rebuilding `euspell_ext/dist`).
 ## Build a standalone installer (recommended)
 
 ```sh
-npm run dist
+npm run dist          # Windows  → release/eupub-Setup-<version>.exe (NSIS installer)
+npm run dist:linux    # Linux    → release/*.AppImage (single portable binary)
+npm run dist:mac      # macOS    → release/Eupub-<version>-arm64.dmg (Apple Silicon; run on a Mac)
 ```
 
-Builds the engine bundle and runs **electron-builder** to produce a single-file
-Windows installer:
+Each builds the engine bundle and runs **electron-builder** for that platform.
+First run downloads electron-builder's toolchain; the Electron runtime comes from
+the local cache.
 
-```text
-release/eupub-Setup-<version>.exe   ← one file; installs Eupub + shortcuts
-```
-
-It's an NSIS installer (`oneClick: false`): the user picks an install location,
-and gets Start-menu/desktop shortcuts and an uninstaller. The app installs to
-`%LOCALAPPDATA%\Programs\eupub` by default and launches fast (extracted once).
-The icon is the committed `build/icon.ico`. First run of `electron-builder`
-downloads its NSIS toolchain; the Electron runtime comes from the local cache.
+The Windows target is a single-file NSIS installer (`oneClick: false`): the user
+picks an install location and gets Start-menu/desktop shortcuts and an
+uninstaller. It installs to `%LOCALAPPDATA%\Programs\eupub` by default and
+launches fast (extracted once). The icon is the committed `build/icon.ico`.
 
 > Unsigned, so Windows SmartScreen shows an "unknown publisher" prompt
 > ("More info → Run anyway"). Removing it requires code signing.
+
+The **macOS** target builds an Apple-Silicon `.dmg` and must run on a Mac (dmg
+tooling is macOS-only). By default it's **unsigned**, so Gatekeeper blocks the
+first launch (Control-click ▸ Open). To sign and notarize it for distribution,
+see [docs/macos-signing.md](docs/macos-signing.md). The hardened-runtime
+entitlements it uses are in [`build/entitlements.mac.plist`](build/entitlements.mac.plist).
+
+The **Android** app is a separate native project under [`android/`](android/),
+built with Gradle; it wraps the same engine and PDF viewer for a WebView host.
 
 ## Build an unpacked folder (for quick local testing)
 
