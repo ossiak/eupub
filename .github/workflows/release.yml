@@ -1,22 +1,29 @@
 # Builds the release assets. On a version tag (v*) push it publishes a GitHub
 # Release; on a manual run (workflow_dispatch) it uploads each build as a
-# downloadable workflow artifact instead — a dry run with no tag/release.
+# downloadable workflow artifact instead (a dry run with no tag/release).
 #
-#   • Linux (ubuntu-latest) → Eupub-<version>.AppImage
-#   • macOS (macos-latest)  → Eupub-<version>-arm64.dmg — signed + notarized when
+#   Linux (ubuntu-latest) -> Eupub-<version>.AppImage
+#   macOS (macos-latest)  -> Eupub-<version>-arm64.dmg, signed + notarized when
 #     the signing secrets below are set, otherwise an unsigned dmg.
 #
-# The two jobs run in parallel and each attaches its own asset: whichever reaches
-# the release first creates it, the other adds to it (create-or-upload), so there
-# is no ordering dependency and a failure in one still ships the other's asset.
+# The two jobs run in parallel and each attaches its own asset (create-or-upload),
+# so there is no ordering dependency and a failure in one still ships the other's.
 #
-# Cut a release:
-#   npm version <x.y.z>                  # edits package.json + creates the tag
+# Eupub reuses the euspell engine "as-is" from the sibling euspell_ext repo via
+# relative imports (../../../euspell_ext/...), so BOTH repos are checked out
+# side-by-side into the workspace (eupub/ and euspell_ext/), and euspell_ext is
+# built first (its dist/ is gitignored). euspell_ext is private, so its checkout
+# needs a token that can read it:
+#   EUSPELL_EXT_TOKEN  a PAT (fine-grained: ossiak/euspell Contents:read, or a
+#                      classic PAT with 'repo') stored as an Actions secret here.
+#
+# Cut a release (locally, in the eupub repo):
+#   npm version <x.y.z>                  # edits package.json + package-lock + tag
 #   git push --follow-tags origin main   # pushes the commit AND its tag together
 #
-# macOS signing secrets (Settings ▸ Secrets and variables ▸ Actions) — all
+# macOS signing secrets (Settings > Secrets and variables > Actions) - all
 # optional; without them the macOS job still builds an unsigned dmg. See
-# docs/macos-signing.md for how to obtain each:
+# docs/macos-signing.md:
 #   CSC_LINK           base64 of the Developer ID Application .p12
 #   CSC_KEY_PASSWORD   that .p12's export password
 #   APPLE_API_KEY_P8   contents of the App Store Connect AuthKey_*.p8
@@ -36,36 +43,55 @@ jobs:
   appimage:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out eupub
+        uses: actions/checkout@v4
+        with:
+          path: eupub
+      - name: Check out euspell_ext (sibling engine source)
+        uses: actions/checkout@v4
+        with:
+          repository: ossiak/euspell
+          path: euspell_ext
+          token: ${{ secrets.EUSPELL_EXT_TOKEN }}
       - uses: actions/setup-node@v4
         with:
           # 24 (LTS), matching .nvmrc / package.json engines and local dev.
           node-version: 24
           cache: npm
-      - run: npm ci
+          cache-dependency-path: |
+            eupub/package-lock.json
+            euspell_ext/package-lock.json
+
+      # euspell_ext's dist/ is gitignored; build it so its src/content/
+      # lexicon-source.js (which Eupub's engine bundle imports) can load
+      # dist/lexicon.js + friends.
+      - name: Build euspell_ext (engine + lexicon)
+        working-directory: euspell_ext
+        run: npm ci && npm run build
+
+      - name: Install Eupub deps
+        working-directory: eupub
+        run: npm ci
 
       # Guard against a tag/package.json mismatch before the multi-minute build:
-      # the tag drives the release name, package.json drives the artifact name
-      # (Eupub-${version}.AppImage), so they must agree. Tag runs only — a manual
-      # dry run has no tag to check.
+      # the tag drives the release name, package.json drives the artifact name.
       - name: Check tag matches package.json version
         if: github.ref_type == 'tag'
+        working-directory: eupub
         run: |
           pkg="v$(node -p "require('./package.json').version")"
           if [ "$pkg" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::tag $GITHUB_REF_NAME != package.json $pkg — bump package.json to match the tag"
+            echo "::error::tag $GITHUB_REF_NAME != package.json $pkg -- bump package.json to match the tag"
             exit 1
           fi
 
-      # dist:linux builds the engine + lexicon, then runs electron-builder
-      # --linux AppImage. electron-builder writes to release/ (build.directories
-      # .output in package.json), named Eupub-${version}.AppImage.
-      - run: npm run dist:linux
+      - name: Build AppImage
+        working-directory: eupub
+        run: npm run dist:linux
 
-      # Tag push → publish the Release with the AppImage attached, or add it to
-      # the release the macOS job may already have created.
       - name: Publish release
         if: github.ref_type == 'tag'
+        working-directory: eupub
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -74,47 +100,60 @@ jobs:
             --generate-notes \
           || gh release upload "$GITHUB_REF_NAME" release/Eupub-*.AppImage --clobber
 
-      # Manual dry run → no release; just hand back the built AppImage as a
-      # downloadable workflow artifact so the build can be verified end to end.
       - name: Upload AppImage artifact (dry run)
         if: github.ref_type != 'tag'
         uses: actions/upload-artifact@v4
         with:
           name: eupub-appimage
-          path: release/Eupub-*.AppImage
+          path: eupub/release/Eupub-*.AppImage
           if-no-files-found: error
 
   dmg:
     runs-on: macos-latest # Apple Silicon runner, matching the --arm64 target
     env:
-      # Signing/notarization inputs. Each is empty when its secret isn't set,
-      # which electron-builder treats as "no signing" → an unsigned dmg (the
-      # build still succeeds). CSC_* sign the app; APPLE_* notarize it.
       CSC_LINK: ${{ secrets.CSC_LINK }}
       CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
       APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out eupub
+        uses: actions/checkout@v4
+        with:
+          path: eupub
+      - name: Check out euspell_ext (sibling engine source)
+        uses: actions/checkout@v4
+        with:
+          repository: ossiak/euspell
+          path: euspell_ext
+          token: ${{ secrets.EUSPELL_EXT_TOKEN }}
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+          cache-dependency-path: |
+            eupub/package-lock.json
+            euspell_ext/package-lock.json
+
+      - name: Build euspell_ext (engine + lexicon)
+        working-directory: euspell_ext
+        run: npm ci && npm run build
+
+      - name: Install Eupub deps
+        working-directory: eupub
+        run: npm ci
 
       - name: Check tag matches package.json version
         if: github.ref_type == 'tag'
+        working-directory: eupub
         run: |
           pkg="v$(node -p "require('./package.json').version")"
           if [ "$pkg" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::tag $GITHUB_REF_NAME != package.json $pkg — bump package.json to match the tag"
+            echo "::error::tag $GITHUB_REF_NAME != package.json $pkg -- bump package.json to match the tag"
             exit 1
           fi
 
       # Only when the notary key is configured: write the .p8 to a file for
-      # notarytool and switch build.mac.notarize on (the committed default is
-      # false so local/unconfigured builds don't attempt notarization). Turning
-      # it on without credentials would fail the build, hence the guard.
+      # notarytool and switch build.mac.notarize on (committed default is false).
       - name: Enable notarization
         if: env.APPLE_API_KEY_ID != ''
         env:
@@ -123,16 +162,15 @@ jobs:
           mkdir -p "$RUNNER_TEMP/keys"
           printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/keys/AuthKey.p8"
           echo "APPLE_API_KEY=$RUNNER_TEMP/keys/AuthKey.p8" >> "$GITHUB_ENV"
-          node -e "const f='package.json',p=require('./'+f);p.build.mac.notarize=true;require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')"
+          node -e "const f='eupub/package.json',p=require('./'+f);p.build.mac.notarize=true;require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')"
 
-      # dist:mac builds the engine + lexicon, then electron-builder --mac dmg
-      # --arm64 → release/Eupub-${version}-arm64.dmg. When CSC_*/APPLE_* are set
-      # it signs with the hardened runtime + build/entitlements.mac.plist and
-      # notarizes + staples via notarytool.
-      - run: npm run dist:mac
+      - name: Build dmg
+        working-directory: eupub
+        run: npm run dist:mac
 
       - name: Publish release
         if: github.ref_type == 'tag'
+        working-directory: eupub
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -146,5 +184,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: eupub-dmg
-          path: release/Eupub-*-arm64.dmg
+          path: eupub/release/Eupub-*-arm64.dmg
           if-no-files-found: error
