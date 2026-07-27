@@ -9,10 +9,11 @@ name: Eupub
 
 options:
   bundleIdPrefix: com.euspell
-  # iOS 15 matches the Android floor (minSdk 26); well above WKURLSchemeHandler's
-  # iOS 11 requirement.
+  # iOS 17 matches the App Store listing's floor (docs/installing.md). It also
+  # keeps the reader's WKWebView on a modern system WebKit — container queries,
+  # :has(), CSS nesting — since that engine is pinned to the OS version.
   deploymentTarget:
-    iOS: "15.0"
+    iOS: "17.0"
 
 packages:
   # EPUB is a ZIP; iOS Foundation has no unzip, so use ZIPFoundation (pure Swift)
