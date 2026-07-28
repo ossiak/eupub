@@ -1,6 +1,6 @@
 {
   "name": "eupub",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Eupub — a standalone EPUB/PDF/plain-text reader that renders books in euspell reformed spelling",
   "author": "Kamran Ossia",
   "license": "GPL-3.0-or-later",
