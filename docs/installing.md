@@ -54,19 +54,9 @@ aren't supported by this build.
 1. Download `Eupub-<version>-arm64.dmg` and open it. A window opens showing the
    **Eupub** app beside an **Applications** shortcut.
 2. **Drag Eupub onto the Applications folder**, then eject the disk image.
-3. Eupub isn't signed by Apple yet, so the first launch is blocked by
-   **Gatekeeper**. Open it once the manual way:
-   - **Control-click** (or right-click) **Eupub** in Applications, choose
-     **Open**, then **Open** again in the dialog; or
-   - if macOS still refuses, open **System Settings ▸ Privacy & Security**,
-     scroll to the *"Eupub was blocked"* message, click **Open Anyway**, and
-     confirm.
-
-   You only do this once — afterwards it opens normally.
-
-> If macOS says **"Eupub is damaged and can't be opened,"** that's the download
-> quarantine on an unsigned app, not real damage: run
-> `xattr -dr com.apple.quarantine /Applications/Eupub.app`, then open it again.
+3. Launch Eupub with a normal double-click. The app is signed with a Developer ID
+   certificate and notarized by Apple — and the disk image itself is notarized too
+   — so Gatekeeper opens it with no prompt, even on first launch and offline.
 
 ## Linux
 
@@ -163,8 +153,6 @@ If there's no prebuilt file for your platform, or you want to run from source:
 | Symptom | Try |
 | --- | --- |
 | Windows: *"Windows protected your PC"* | Expected — the app is unsigned. **More info → Run anyway**. |
-| macOS: *"…can't be opened because Apple cannot check it"* | Expected — unsigned. **Control-click ▸ Open**, or **System Settings ▸ Privacy & Security ▸ Open Anyway**. |
-| macOS: *"Eupub is damaged and can't be opened"* | Download quarantine, not damage. Run `xattr -dr com.apple.quarantine /Applications/Eupub.app`, then reopen. |
 | Linux: AppImage won't start / mount error | Install FUSE 2, or run `./Eupub-*.AppImage --appimage-extract-run`. Confirm it's executable (`chmod +x`). |
 | Android: *"App not installed"* or blocked | Allow **Install unknown apps** for the app opening the APK; in Play Protect choose **Install anyway**. Check the phone is Android 8.0+. |
 | iOS: can't find Eupub in the App Store | It needs **iOS 17 or later** — older iPhones/iPads won't see the listing. Check for an OS update (and your store region). |
