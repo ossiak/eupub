@@ -186,6 +186,22 @@ jobs:
         working-directory: eupub
         run: npm run dist:mac
 
+      # electron-builder (above) notarizes + staples the .app, but not the .dmg
+      # wrapper — so a downloaded dmg still trips Gatekeeper on open even though the
+      # app inside is clean. Notarize and staple the dmg itself (its app is already
+      # notarized, so this pass is quick) so the download opens with no prompt.
+      # Reuses the API-key creds the "Configure signing" step put in the env.
+      - name: Notarize and staple the dmg
+        if: env.APPLE_API_KEY_ID != ''
+        working-directory: eupub
+        run: |
+          dmg=$(ls release/Eupub-*-arm64.dmg)
+          xcrun notarytool submit "$dmg" \
+            --key "$APPLE_API_KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" \
+            --wait
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+
       - name: Publish release
         if: github.ref_type == 'tag'
         working-directory: eupub
