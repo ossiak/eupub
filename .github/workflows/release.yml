@@ -104,7 +104,7 @@ jobs:
 
       - name: Upload AppImage artifact (dry run)
         if: github.ref_type != 'tag'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: eupub-appimage
           path: eupub/release/Eupub-*.AppImage
@@ -215,7 +215,7 @@ jobs:
 
       - name: Upload dmg artifact (dry run)
         if: github.ref_type != 'tag'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: eupub-dmg
           path: eupub/release/Eupub-*-arm64.dmg
