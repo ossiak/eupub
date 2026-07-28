@@ -22,6 +22,12 @@ window.EupubViewerRuntime = function () {
   // match exactly — otherwise columns drift and each page shows two half-columns.
   var SIDE = 48;
   var VPAD = 44;
+  // Max reading measure, in ems of the reading font (~66–70 Georgia characters).
+  // On a roomy viewport (tablet, wide desktop window) a full-width column is an
+  // unreadable line length, so the measure is capped to this and centered — see
+  // applyColumns. In ems so the cap tracks the user's font size; a narrow phone
+  // never reaches it.
+  var MEASURE_EM = 34;
   var pageWidth = 0;
 
   function post(type, data) {
@@ -57,6 +63,15 @@ window.EupubViewerRuntime = function () {
     } else {                 // roomy portrait window
       side = SIDE; vpad = VPAD;
     }
+    // Cap the reading measure on a roomy viewport: once the content box (W − 2·side)
+    // would exceed MEASURE_EM ems, widen `side` SYMMETRICALLY so the column holds at
+    // that measure and stays centered. The page pitch stays W (gap = 2·side), so
+    // every pagination sum below is unchanged — only the side margins grow. capSide
+    // only ever exceeds the breakpoint `side` on a wide viewport, so phones are
+    // untouched (there the cap would be negative).
+    var em = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    var capSide = (W - MEASURE_EM * em) / 2;
+    if (capSide > side) side = capSide;
     pageWidth = W;
     set(document.documentElement.style, {
       margin: '0', padding: '0', width: W + 'px', height: H + 'px', overflow: 'hidden',
