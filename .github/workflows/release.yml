@@ -44,16 +44,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out eupub
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: eupub
       - name: Check out euspell_ext (sibling engine source)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: ossiak/euspell
           path: euspell_ext
           token: ${{ secrets.EUSPELL_EXT_TOKEN }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           # 24 (LTS), matching .nvmrc / package.json engines and local dev.
           node-version: 24
@@ -104,7 +104,7 @@ jobs:
 
       - name: Upload AppImage artifact (dry run)
         if: github.ref_type != 'tag'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: eupub-appimage
           path: eupub/release/Eupub-*.AppImage
@@ -114,16 +114,16 @@ jobs:
     runs-on: macos-latest # Apple Silicon runner, matching the --arm64 target
     steps:
       - name: Check out eupub
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: eupub
       - name: Check out euspell_ext (sibling engine source)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: ossiak/euspell
           path: euspell_ext
           token: ${{ secrets.EUSPELL_EXT_TOKEN }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
@@ -215,7 +215,7 @@ jobs:
 
       - name: Upload dmg artifact (dry run)
         if: github.ref_type != 'tag'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: eupub-dmg
           path: eupub/release/Eupub-*-arm64.dmg
