@@ -1,0 +1,36 @@
+# XcodeGen spec — generates the .xcodeproj so the spike can be built from a
+# terminal without opening Xcode's UI. Regenerate with `xcodegen generate`, or
+# just run ./run.sh which does it for you.
+#
+# The generated EupubOriginSpike.xcodeproj is disposable build output; nothing
+# here depends on its contents, so it is fine to delete it and regenerate.
+
+name: EupubOriginSpike
+
+options:
+  bundleIdPrefix: com.euspell
+  # iOS 15 is Eupub's floor on the Android side (minSdk 26 ≈ same era) and well
+  # above WKURLSchemeHandler's iOS 11 requirement.
+  deploymentTarget:
+    iOS: "15.0"
+
+targets:
+  EupubOriginSpike:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    info:
+      path: Generated-Info.plist
+      properties:
+        CFBundleDisplayName: Origin Spike
+        # Present-but-empty is the modern "use the default blank launch screen";
+        # without it iOS letterboxes the app into a small compatibility window,
+        # which would make the verdict text hard to read.
+        UILaunchScreen: {}
+    settings:
+      base:
+        # Simulator builds need no team or signing identity — this keeps the
+        # spike runnable without an Apple Developer account.
+        CODE_SIGNING_ALLOWED: NO
+        PRODUCT_BUNDLE_IDENTIFIER: com.euspell.EupubOriginSpike

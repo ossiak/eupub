@@ -293,6 +293,24 @@ ipcMain.handle('shell:openExternal', (_e, href) => {
   }
 });
 
+// Whether the OS scrolls "naturally" (content follows the fingers). The renderer
+// uses this to keep the page-turn swipe physical (swipe-left = next) instead of
+// following the setting — deltaX's sign already bakes the setting in, and only
+// the host can read it. Only macOS has the toggle (com.apple.swipescrolldirection
+// = 1 natural, 0 classic; absent → the natural default); elsewhere report natural
+// so the renderer's normalization is a no-op and existing behavior is unchanged.
+ipcMain.handle('system:naturalScroll', () => {
+  if (process.platform !== 'darwin') return true;
+  try {
+    const out = require('node:child_process')
+      .execFileSync('defaults', ['read', '-g', 'com.apple.swipescrolldirection'], { encoding: 'utf8' })
+      .trim();
+    return out !== '0';
+  } catch {
+    return true; // key never set — macOS defaults to natural scrolling
+  }
+});
+
 // --- the app://eupub origin (embedded PDF viewer) ---------------------------
 
 // Opened PDFs, id -> absolute path. The id (not the path) appears in the served

@@ -22,6 +22,12 @@ window.EupubViewerRuntime = function () {
   // match exactly — otherwise columns drift and each page shows two half-columns.
   var SIDE = 48;
   var VPAD = 44;
+  // Max reading measure, in ems of the reading font (~66–70 Georgia characters).
+  // On a roomy viewport (tablet, wide desktop window) a full-width column is an
+  // unreadable line length, so the measure is capped to this and centered — see
+  // applyColumns. In ems so the cap tracks the user's font size; a narrow phone
+  // never reaches it.
+  var MEASURE_EM = 34;
   var pageWidth = 0;
 
   function post(type, data) {
@@ -57,6 +63,15 @@ window.EupubViewerRuntime = function () {
     } else {                 // roomy portrait window
       side = SIDE; vpad = VPAD;
     }
+    // Cap the reading measure on a roomy viewport: once the content box (W − 2·side)
+    // would exceed MEASURE_EM ems, widen `side` SYMMETRICALLY so the column holds at
+    // that measure and stays centered. The page pitch stays W (gap = 2·side), so
+    // every pagination sum below is unchanged — only the side margins grow. capSide
+    // only ever exceeds the breakpoint `side` on a wide viewport, so phones are
+    // untouched (there the cap would be negative).
+    var em = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    var capSide = (W - MEASURE_EM * em) / 2;
+    if (capSide > side) side = capSide;
     pageWidth = W;
     set(document.documentElement.style, {
       margin: '0', padding: '0', width: W + 'px', height: H + 'px', overflow: 'hidden',
@@ -435,13 +450,38 @@ window.EupubViewerRuntime = function () {
     }
   });
 
-  var wheelLock = 0;
+  // A single trackpad swipe fires a burst of wheel events (often 400-900ms with
+  // momentum) — one page-turn per burst, not per event. Debounce off the gap
+  // between events (gesture end) rather than a fixed window from the first one,
+  // since a fixed window can expire mid-burst and double-fire on the same swipe.
+  var wheelIdle = null;
+  var wheelActedThisBurst = false;
   document.addEventListener('wheel', function (e) {
-    var now = Date.now();
-    if (now < wheelLock) return;
-    var d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    var horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+    // Normally page only on horizontal-dominant swipes — vertical swipes have no
+    // scrollable content to move. But a SINGLE-page section (a full-bleed cover, a
+    // short title page) has nothing to page within it, so a vertical swipe would do
+    // nothing and leave the reader unable to swipe past it. There, let either axis
+    // turn the page — the turn falls through to the next section.
+    if (!horizontal && pageCount > 1) return;
+    var raw = horizontal ? e.deltaX : e.deltaY;
+    // Normalize away the OS "natural scrolling" setting so a physical swipe-left
+    // (or, on a single-page section, swipe-up) is ALWAYS "next". The sign already
+    // bakes that setting in, and only the host can read it:
+    // window.__eupubNaturalScroll (reader.js injects it into this iframe, and the
+    // desktop main reads the OS setting; undefined → natural, the mobile/default
+    // convention). Classic scroll (=== false) flips the sign so swipe-left stays
+    // "next" regardless of the setting.
+    var d = window.__eupubNaturalScroll === false ? -raw : raw;
     if (Math.abs(d) < 8) return;
-    wheelLock = now + 250;
+    // Only a qualifying event extends the burst. Trackpad momentum keeps
+    // firing (mostly trivial) wheel events for a second-plus after the fingers
+    // lift; if those kept the burst alive too, the next real swipe would be
+    // stuck waiting out someone else's momentum tail.
+    clearTimeout(wheelIdle);
+    wheelIdle = setTimeout(function () { wheelActedThisBurst = false; }, 70);
+    if (wheelActedThisBurst) return;
+    wheelActedThisBurst = true;
     if (d > 0) { if (!nextPage()) post('eupub:key', { key: 'ArrowRight' }); }
     else { if (!prevPage()) post('eupub:key', { key: 'ArrowLeft' }); }
   }, { passive: true });

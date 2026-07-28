@@ -87,7 +87,14 @@
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "notarize": false
+      "notarize": false,
+      "fileAssociations": [
+        {
+          "ext": "epub",
+          "name": "EPUB Document",
+          "role": "Viewer"
+        }
+      ]
     },
     "dmg": {
       "artifactName": "Eupub-${version}-${arch}.${ext}"
@@ -118,5 +125,10 @@
       "shortcutName": "Eupub",
       "uninstallDisplayName": "Eupub ${version}"
     }
+  },
+  "allowScripts": {
+    "electron@33.4.11": true,
+    "electron-winstaller@5.4.0": true,
+    "fsevents@2.3.3": true
   }
 }

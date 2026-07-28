@@ -1,0 +1,50 @@
+# XcodeGen spec for the Eupub iOS app. Regenerate with `xcodegen generate`, or
+# run ./run.sh which does it for you. The generated Eupub.xcodeproj is disposable
+# build output — nothing depends on its contents.
+#
+# The web payload in www/ (reader + engine + lexicon.db + sample book) is staged
+# by prepare-assets.mjs and bundled as a FOLDER REFERENCE, so its directory
+# structure survives into the app and the scheme handler can serve it by path.
+name: Eupub
+
+options:
+  bundleIdPrefix: com.euspell
+  # iOS 17 matches the App Store listing's floor (docs/installing.md). It also
+  # keeps the reader's WKWebView on a modern system WebKit — container queries,
+  # :has(), CSS nesting — since that engine is pinned to the OS version.
+  deploymentTarget:
+    iOS: "17.0"
+
+packages:
+  # EPUB is a ZIP; iOS Foundation has no unzip, so use ZIPFoundation (pure Swift)
+  # for openPath/pickEpub extraction — the analog of Android's ZipInputStream.
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation.git
+    from: "0.9.19"
+
+targets:
+  Eupub:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      # Folder reference (buildPhase resources), not a group: keeps www/reader,
+      # www/engine, www/book structure intact in the bundle.
+      - path: www
+        type: folder
+    dependencies:
+      # For the native SQLite lexicon (import SQLite3 in Lexicon.swift).
+      - sdk: libsqlite3.tbd
+      - package: ZIPFoundation
+    info:
+      path: Generated-Info.plist
+      properties:
+        CFBundleDisplayName: Eupub
+        UILaunchScreen: {}
+        # No arbitrary loads needed — everything is served from the custom scheme.
+    settings:
+      base:
+        # Simulator builds need no team/identity — keeps the app runnable without
+        # an Apple Developer account (device builds set a team in Xcode later).
+        CODE_SIGNING_ALLOWED: NO
+        PRODUCT_BUNDLE_IDENTIFIER: com.euspell.Eupub

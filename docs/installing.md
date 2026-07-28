@@ -145,8 +145,16 @@ If there's no prebuilt file for your platform, or you want to run from source:
 - **Android** — the native project lives under [`android/`](../android/); build
   the APK with Gradle (`./gradlew assembleDebug`). Its port design is documented
   in [android-port.md](android-port.md).
-- **iOS** — built from a separate Xcode project (not in this repo) and shipped
-  through the App Store; there's no build step here.
+- **iOS** — the native app is in the repo under [`ios/Eupub/`](../ios/Eupub/). On
+  a Mac with full Xcode and XcodeGen (`brew install xcodegen`), build and run it in
+  the Simulator with `cd ios/Eupub && ./run.sh` — it stages the web assets,
+  generates the project, builds (no signing), installs, and launches. Pass a device
+  name to choose one, e.g. `./run.sh "iPad Pro 13-inch (M5)"` (any from
+  `xcrun simctl list devices available`), iPad included, since it's a universal
+  iPhone/iPad app. For a physical device, stage and generate the project
+  (`node ios/Eupub/prepare-assets.mjs && (cd ios/Eupub && xcodegen generate)`),
+  open `ios/Eupub/Eupub.xcodeproj` in Xcode, set a signing **Team**, and **Run**.
+  The App Store build is produced and submitted separately.
 
 ## If something looks wrong
 

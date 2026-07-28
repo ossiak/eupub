@@ -235,6 +235,14 @@
     // alone. (See onSidebarWheel.)
     window.addEventListener('wheel', onSidebarWheel, { capture: true, passive: false });
 
+    // Page-turn direction must NOT follow the OS "natural scrolling" toggle (see
+    // viewer-runtime.js). deltaX's sign bakes that setting in and only the host
+    // can read it, so ask the desktop main for it; mobile has no such method and
+    // keeps the natural default. Re-checked on focus since the user may flip the
+    // setting in System Settings and switch back.
+    syncScrollDir();
+    window.addEventListener('focus', syncScrollDir);
+
     for (const tab of document.querySelectorAll('.tab')) {
       tab.addEventListener('click', () => switchTab(tab.dataset.tab));
     }
@@ -694,7 +702,9 @@
         ? `window.EupubEngine.setLexicon(new Map(${jsonForScript(subset)}));` +
           `window.EupubEngine.walkTextNodes(document.body, window.EupubEngine.convert);`
         : '';
-    boot.textContent = scriptSafe(`${reform}window.__eupubConfig=${jsonForScript(cfg)};(${state.runtimeSource})();`);
+    boot.textContent = scriptSafe(
+      `window.__eupubNaturalScroll=${JSON.stringify(window.__eupubNaturalScroll ?? null)};` +
+      `${reform}window.__eupubConfig=${jsonForScript(cfg)};(${state.runtimeSource})();`);
     doc.body.appendChild(boot);
 
     return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
@@ -802,6 +812,27 @@
       @keyframes eupubflash { 0%,100%{ background:transparent } 12%,55%{ background:rgba(255,214,82,0.5) } }`;
   }
 
+  // Fetch the OS scroll direction from the host and publish it to BOTH the reader
+  // window and the live chapter iframe — the page-turn handler lives in the iframe,
+  // so the value must reach it (this was the bug: it was only set on the reader
+  // window). Called at init, on focus (the setting may be toggled and the app
+  // refocused), and whenever a chapter reports ready, so timing can't strand it.
+  function syncScrollDir() {
+    const get = window.eupub && window.eupub.getNaturalScroll;
+    if (typeof get !== 'function') return;
+    Promise.resolve(get())
+      .then((v) => {
+        if (typeof v !== 'boolean') return;
+        window.__eupubNaturalScroll = v;
+        try {
+          if (els.iframe.contentWindow) els.iframe.contentWindow.__eupubNaturalScroll = v;
+        } catch {
+          /* cross-realm access — ignore */
+        }
+      })
+      .catch(() => {});
+  }
+
   // --- messages from the chapter --------------------------------------
 
   function onChapterMessage(e) {
@@ -823,7 +854,10 @@
         // After a chapter loads (e.g. via a TOC/bookmark/search click, which
         // leaves focus on a sidebar element), hand keyboard focus to the reader
         // so arrow keys page the text instead of moving/scrolling the TOC.
-        if (m.type === 'eupub:ready') focusReader();
+        if (m.type === 'eupub:ready') {
+          focusReader();
+          syncScrollDir(); // make sure this freshly-ready iframe has the scroll dir
+        }
         break;
       case 'eupub:navigate': {
         const target = String(m.href).split('#')[0];
@@ -886,7 +920,17 @@
     if (state.index >= 0) sendToChapter({ type: 'eupub:prev' });
   }
   // The runtime posts a key back when it can't page further: turn the chapter.
+  // Chapter turns replace the iframe, which wipes the fresh runtime's own wheel
+  // debounce state — so a single long swipe that lands right on a chapter's last
+  // page can otherwise cascade into the next (freshly-unlocked) chapter's edge,
+  // and the next, for as long as the gesture's momentum tail keeps qualifying.
+  // This cooldown is the only state that survives the iframe swap, so it's what
+  // actually caps a gesture to one chapter turn.
+  let edgeTurnCooldown = 0;
   function handleEdgeTurn(key) {
+    const now = Date.now();
+    if (now < edgeTurnCooldown) return;
+    edgeTurnCooldown = now + 500;
     if (key === 'ArrowRight' && state.index < state.model.spine.length - 1) go(state.index + 1, {});
     else if (key === 'ArrowLeft' && state.index > 0) go(state.index - 1, { startAtEnd: true });
   }
@@ -897,20 +941,28 @@
   }
 
   // Wheel over the Contents sidebar: never scroll the TOC (click-only), instead
-  // page the book — matching the in-iframe wheel feel (threshold + 250ms lock).
-  // Only acts while the Contents tab is active, so the scrollable Marks/Notes/
-  // Search panels keep their normal wheel scrolling.
-  let tocWheelLock = 0;
+  // page the book — matching the in-iframe wheel feel (threshold + idle-debounce,
+  // one page-turn per swipe burst; see viewer-runtime.js's wheel handler for why
+  // a fixed-window lock double-fires on longer/momentum swipes). Only acts while
+  // the Contents tab is active, so the scrollable Marks/Notes/Search panels keep
+  // their normal wheel scrolling.
+  let tocWheelIdle = null;
+  let tocWheelActedThisBurst = false;
   function onSidebarWheel(e) {
     if (state.index < 0) return;
     if (!els.sidebar.contains(e.target)) return;
     if (!els.panelToc.classList.contains('active')) return;
     e.preventDefault();
-    const now = Date.now();
-    if (now < tocWheelLock) return;
-    const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    // Horizontal-dominant swipes only — see viewer-runtime.js's wheel handler.
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    // Normalize away the OS natural-scrolling setting — see viewer-runtime.js.
+    const d = window.__eupubNaturalScroll === false ? -e.deltaX : e.deltaX;
     if (Math.abs(d) < 8) return;
-    tocWheelLock = now + 250;
+    // Only a qualifying event extends the burst — see viewer-runtime.js for why.
+    clearTimeout(tocWheelIdle);
+    tocWheelIdle = setTimeout(() => { tocWheelActedThisBurst = false; }, 70);
+    if (tocWheelActedThisBurst) return;
+    tocWheelActedThisBurst = true;
     if (d > 0) navNext();
     else navPrev();
   }
@@ -918,9 +970,28 @@
   function updateNavState() {
     els.prev.disabled = state.index <= 0 && state.page <= 0;
     els.next.disabled = state.index >= state.model.spine.length - 1 && state.page >= state.pages - 1;
-    const chapter = `Ch ${state.index + 1}/${state.model.spine.length}`;
-    setStatus('right', `${chapter} · p ${state.page + 1}/${state.pages}`);
+    setStatus('right', `${chapterCounter()} · p ${state.page + 1}/${state.pages}`);
     updateProgress();
+  }
+
+  // The chapter number/total from the TOC's top-level entries — so the count
+  // reflects real chapters, not spine files. The spine also lists the cover,
+  // title, copyright, contents, … so "chapter 5" can be spine item 13 of 19.
+  // Uses the shallowest-depth navigable TOC entries (a nested TOC's sub-sections
+  // don't inflate it) and finds which one the current position falls in; "Ch 0"
+  // means front matter before the first chapter. Falls back to the spine position
+  // when there's no real nav TOC (a spine-derived TOC is 1:1 with files anyway).
+  function chapterCounter() {
+    const navigable = (state.model?.toc ?? []).filter((e) => e.spineIndex != null);
+    const minDepth = navigable.reduce((m, e) => Math.min(m, e.depth), Infinity);
+    const chapters = navigable.filter((e) => e.depth === minDepth);
+    if (chapters.length < 2) return `Ch ${state.index + 1}/${state.model.spine.length}`;
+    let ci = -1;
+    for (const c of chapters) {
+      if (c.spineIndex <= state.index) ci++;
+      else break;
+    }
+    return `Ch ${ci + 1}/${chapters.length}`;
   }
 
   // Whole-book reading progress as a percentage, weighted by chapter text length.
