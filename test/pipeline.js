@@ -19,6 +19,10 @@ app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'eupub-test-')));
 ipcMain.handle('epub:openPath', (_e, p) => openEpub(p));
 ipcMain.handle('open:pending', () => false); // no OS-opened book in the harness
 ipcMain.handle('fs:readText', (_e, p) => fs.readFileSync(p, 'utf8'));
+// reader.js asks the host for the OS scroll direction at init and on focus. It
+// swallows a rejection, so omitting this only logged "No handler registered" —
+// noise that would hide a real IPC failure behind it.
+ipcMain.handle('system:naturalScroll', () => true);
 // This test builds its own srcdoc with the full engine; the no-op keeps reader.js's
 // auto-open (of any stale last book) from erroring on the new subset channel.
 ipcMain.handle('lexicon:subset', () => []);
