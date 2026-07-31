@@ -953,10 +953,14 @@
     if (!els.sidebar.contains(e.target)) return;
     if (!els.panelToc.classList.contains('active')) return;
     e.preventDefault();
-    // Horizontal-dominant swipes only — see viewer-runtime.js's wheel handler.
-    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    // EITHER axis pages the book. The in-iframe handler takes horizontal-dominant
+    // swipes only because a vertical one there has real scrolling to defer to; the
+    // TOC is click-only, so there is nothing to defer to here — and a mouse wheel
+    // reports deltaY alone, so requiring horizontal dominance made the wheel dead
+    // over Contents (prevented, then discarded) for everyone without a trackpad.
+    const raw = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
     // Normalize away the OS natural-scrolling setting — see viewer-runtime.js.
-    const d = window.__eupubNaturalScroll === false ? -e.deltaX : e.deltaX;
+    const d = window.__eupubNaturalScroll === false ? -raw : raw;
     if (Math.abs(d) < 8) return;
     // Only a qualifying event extends the burst — see viewer-runtime.js for why.
     clearTimeout(tocWheelIdle);
