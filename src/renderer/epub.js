@@ -74,14 +74,20 @@
 
   // --- Fallback: derive a flat TOC from the spine ----------------------
 
+  // spineIndex must index `spine` itself — the reader looks the entry up there.
+  // Capture it BEFORE dropping the non-linear items: mapping over the filtered
+  // array numbered the survivors 0,1,2…, so a single linear="no" item anywhere
+  // shifted every later entry one slot early (its TOC row opened the document
+  // before the one it names).
   function tocFromSpine(spine) {
     return spine
-      .filter((s) => s.linear)
-      .map((s, i) => ({
-        label: prettyName(s.href),
-        absPath: s.absPath,
+      .map((s, i) => ({ item: s, index: i }))
+      .filter(({ item }) => item.linear)
+      .map(({ item, index }) => ({
+        label: prettyName(item.href),
+        absPath: item.absPath,
         fragment: '',
-        spineIndex: i,
+        spineIndex: index,
         depth: 1,
       }));
   }

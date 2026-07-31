@@ -362,6 +362,20 @@
     state.model = model;
     for (const s of state.model.spine) s.fileURL = window.eupub.fileURL(s.absPath);
 
+    // Reading order: the spine minus its linear="no" items (EPUB3 pop-up
+    // footnotes, stray cover/ad pages). Those stay in `spine` and stay
+    // reachable — a TOC entry or an in-text link opens them, which is the whole
+    // point of a pop-up footnote — they are simply not part of the SEQUENCE, so
+    // page turns step over them and they count toward neither the chapter
+    // number nor the progress percentage. Held as spine indexes so saved
+    // positions, bookmarks and highlights (all keyed by spine index) are
+    // untouched by this.
+    state.linearIdx = state.model.spine.map((s, i) => (s.linear ? i : -1)).filter((i) => i >= 0);
+    // A book that marks EVERY item non-linear is malformed. Read it as though
+    // the flag were absent rather than declaring it empty — refusing would turn
+    // a book that opens fine today into one that doesn't.
+    if (!state.linearIdx.length) state.linearIdx = state.model.spine.map((_, i) => i);
+
     // 'id:' prefix so an identifier can't collide with a path-shaped legacy key.
     state.bookKey = state.model.identifier ? `id:${state.model.identifier}` : book.sourcePath;
     state.bookmarks = loadBookState(bmKey, []);
@@ -387,7 +401,14 @@
 
     const saved = loadBookState(posKey, null);
     state.currentLocator = saved && saved.locator ? saved.locator : null;
-    const start = saved && Number.isInteger(saved.index) && saved.index < state.model.spine.length ? saved.index : 0;
+    // A saved index may legitimately point at a non-linear document (the reader
+    // was left in a footnote), so it is honoured as-is; only a fresh open starts
+    // at the first item of the reading order rather than spine[0].
+    const savedIndex =
+      saved && Number.isInteger(saved.index) && saved.index >= 0 && saved.index < state.model.spine.length
+        ? saved.index
+        : -1;
+    const start = savedIndex >= 0 ? savedIndex : state.linearIdx[0];
     go(start, { restore: state.currentLocator });
 
     computeCharCounts(book); // async; fills the progress %
@@ -557,14 +578,19 @@
     }, 800);
   }
 
-  // Reads every spine document once and records its visible-text length, so
-  // whole-book progress can be weighted by content. Character-based, so it never
-  // needs recomputing on font/window changes. Aborts if the book changes.
+  // Reads every reading-order document once and records its visible-text length,
+  // so whole-book progress can be weighted by content. Character-based, so it
+  // never needs recomputing on font/window changes. Aborts if the book changes.
+  // Non-linear documents keep a count of 0: they are not part of the sequence,
+  // so their text must not dilute the percentage (and there is no reason to
+  // spend a file read on them).
   async function computeCharCounts(book) {
     const spine = state.model.spine;
+    const order = new Set(state.linearIdx || []);
     const counts = new Array(spine.length).fill(0);
     for (let i = 0; i < spine.length; i++) {
       if (state.book !== book) return;
+      if (!order.has(i)) continue;
       try {
         const html = await readChapterHtml(spine[i].absPath);
         const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -939,8 +965,24 @@
     const now = Date.now();
     if (now < edgeTurnCooldown) return;
     edgeTurnCooldown = now + 500;
-    if (key === 'ArrowRight' && state.index < state.model.spine.length - 1) go(state.index + 1, {});
-    else if (key === 'ArrowLeft' && state.index > 0) go(state.index - 1, { startAtEnd: true });
+    const to = stepLinear(state.index, key === 'ArrowRight' ? 1 : -1);
+    if (to === -1) return;
+    if (key === 'ArrowRight') go(to, {});
+    else go(to, { startAtEnd: true });
+  }
+
+  // The reading-order neighbour of spine index `from` (dir +1 next, -1
+  // previous), or -1 at either end. `from` itself need not be in the reading
+  // order: a TOC entry or an in-text link can land the reader on a non-linear
+  // document, and paging out of one continues from where it sits in the spine.
+  function stepLinear(from, dir) {
+    const order = state.linearIdx || [];
+    if (dir > 0) {
+      for (let k = 0; k < order.length; k++) if (order[k] > from) return order[k];
+    } else {
+      for (let k = order.length - 1; k >= 0; k--) if (order[k] < from) return order[k];
+    }
+    return -1;
   }
   function handleNavKey(key) {
     if (state.index < 0) return;
@@ -980,8 +1022,10 @@
   }
 
   function updateNavState() {
-    els.prev.disabled = state.index <= 0 && state.page <= 0;
-    els.next.disabled = state.index >= state.model.spine.length - 1 && state.page >= state.pages - 1;
+    // "No further chapter" means no further READING-ORDER chapter — a trailing
+    // run of non-linear documents is not somewhere the ‹ › buttons can go.
+    els.prev.disabled = stepLinear(state.index, -1) === -1 && state.page <= 0;
+    els.next.disabled = stepLinear(state.index, 1) === -1 && state.page >= state.pages - 1;
     setStatus('right', `${chapterCounter()} · p ${state.page + 1}/${state.pages}`);
     updateProgress();
   }
@@ -997,7 +1041,15 @@
     const navigable = (state.model?.toc ?? []).filter((e) => e.spineIndex != null);
     const minDepth = navigable.reduce((m, e) => Math.min(m, e.depth), Infinity);
     const chapters = navigable.filter((e) => e.depth === minDepth);
-    if (chapters.length < 2) return `Ch ${state.index + 1}/${state.model.spine.length}`;
+    if (chapters.length < 2) {
+      // Reading-order position and total, not spine position: a book with
+      // non-linear documents would otherwise report e.g. "Ch 1/3" for a
+      // two-chapter book. On a non-linear document itself there is no chapter
+      // number to give, so report the one it follows.
+      const order = state.linearIdx || [];
+      const pos = order.filter((i) => i <= state.index).length;
+      return `Ch ${Math.max(1, pos)}/${order.length}`;
+    }
     let ci = -1;
     for (const c of chapters) {
       if (c.spineIndex <= state.index) ci++;
@@ -1012,7 +1064,10 @@
   function bookProgress() {
     if (!state.charCounts || state.index < 0 || !state.totalChars) return null;
     const i = state.index;
-    const last = state.model.spine.length - 1;
+    // The last item of the READING ORDER — a book ending in a non-linear
+    // document (footnotes, colophon) must still reach 100% on its last chapter.
+    const order = state.linearIdx || [];
+    const last = order.length ? order[order.length - 1] : state.model.spine.length - 1;
     let frac = state.pages > 1 ? state.page / (state.pages - 1) : i === last ? 1 : 0;
     frac = Math.min(1, Math.max(0, frac));
     const chars = state.cumChars[i] + frac * state.charCounts[i];

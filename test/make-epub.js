@@ -18,7 +18,20 @@ function chapter(title, body) {
 </html>`;
 }
 
-function makeEpub(outPath) {
+/**
+ * @param {string} [outPath]
+ * @param {{ nonLinear?: boolean, nav?: boolean }} [opts]
+ *   nonLinear — bracket ch2 with two `linear="no"` documents (EPUB3 pop-up
+ *     footnotes): one between the chapters, one trailing. ch1 gains a link to
+ *     the first, since non-linear content is reached by link, not by paging.
+ *   nav — include the nav document (default true). Pass false to exercise the
+ *     spine-derived TOC fallback.
+ * Defaults reproduce the original two-chapter book exactly, so the tests that
+ * already use this fixture are unaffected.
+ */
+function makeEpub(outPath, opts = {}) {
+  const nonLinear = !!opts.nonLinear;
+  const withNav = opts.nav !== false;
   const zip = new AdmZip();
   const add = (name, text) => zip.addFile(name, Buffer.from(text, 'utf8'));
 
@@ -40,20 +53,20 @@ function makeEpub(outPath) {
     <dc:identifier id="bookid">urn:uuid:eupub-test-0001</dc:identifier>
   </metadata>
   <manifest>
-    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
-    <item id="css" href="style.css" media-type="text/css"/>
+${withNav ? '    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>\n' : ''}    <item id="css" href="style.css" media-type="text/css"/>
     <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
     <item id="ch2" href="ch2.xhtml" media-type="application/xhtml+xml"/>
-  </manifest>
+${nonLinear ? '    <item id="notea" href="notea.xhtml" media-type="application/xhtml+xml"/>\n    <item id="noteb" href="noteb.xhtml" media-type="application/xhtml+xml"/>\n' : ''}  </manifest>
   <spine>
     <itemref idref="ch1"/>
-    <itemref idref="ch2"/>
-  </spine>
+${nonLinear ? '    <itemref idref="notea" linear="no"/>\n' : ''}    <itemref idref="ch2"/>
+${nonLinear ? '    <itemref idref="noteb" linear="no"/>\n' : ''}  </spine>
 </package>`
   );
-  add(
-    'OEBPS/nav.xhtml',
-    `<?xml version="1.0" encoding="utf-8"?>
+  if (withNav) {
+    add(
+      'OEBPS/nav.xhtml',
+      `<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head><title>Contents</title></head>
 <body>
@@ -65,12 +78,22 @@ function makeEpub(outPath) {
   </nav>
 </body>
 </html>`
-  );
+    );
+  }
   add('OEBPS/style.css', 'body{font-family:serif}h1{color:#334}');
   // ch1 includes an href-less anchor (a link *target*, as EPUBs scatter through
   // text) and a real link, so tests can assert only real links are colored.
-  add('OEBPS/ch1.xhtml', chapter('Chapter One', 'The <a id="anchortarget">people</a> thought they could read through the <a href="ch2.xhtml">rough</a> night before the action. <span class="probe">hover probe</span>'));
+  const ch1Body =
+    'The <a id="anchortarget">people</a> thought they could read through the <a href="ch2.xhtml">rough</a> night before the action. <span class="probe">hover probe</span>' +
+    (nonLinear ? ' <a id="notelink" href="notea.xhtml">see note</a>' : '');
+  add('OEBPS/ch1.xhtml', chapter('Chapter One', ch1Body));
   add('OEBPS/ch2.xhtml', chapter('Chapter Two', 'Enough laughter brought the daughter through the bough.'));
+  if (nonLinear) {
+    // Nonsense proper nouns: not in the lexicon, so they survive euspell
+    // conversion verbatim and a test can match on them exactly.
+    add('OEBPS/notea.xhtml', chapter('Zarquon', 'Zarquon is the first pop-up note.'));
+    add('OEBPS/noteb.xhtml', chapter('Wibble', 'Wibble is the trailing pop-up note.'));
+  }
 
   const file = outPath || path.join(os.tmpdir(), `eupub-sample-${Date.now()}.epub`);
   zip.writeZip(file);
