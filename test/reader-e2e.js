@@ -128,11 +128,19 @@ app.whenReady().then(async () => {
     const euspellSearchRows = rows();
 
     // Window-space center points for hover probing (iframe offset + element rect).
+    // Aim at the element's FIRST line fragment, not its bounding box: an inline
+    // element that wraps reports the UNION of its fragments, and that union's
+    // midpoint lands in the gap between them — on the parent <p>, so the hover
+    // never reaches the element and the probe reads as un-hovered. (Same reason
+    // viewer-runtime.js has firstRect(). This started biting when the reading-
+    // measure cap narrowed the column from 611px to 476px, enough to wrap the
+    // probe onto two lines.)
     function pt(sel) {
       const el = idoc.querySelector(sel);
       if (!el) return null;
       const ir = iframe.getBoundingClientRect();
-      const r = el.getBoundingClientRect();
+      const rects = el.getClientRects();
+      const r = rects.length ? rects[0] : el.getBoundingClientRect();
       return { x: Math.round(ir.left + r.left + r.width / 2), y: Math.round(ir.top + r.top + r.height / 2) };
     }
 
