@@ -53,7 +53,7 @@ function makeEpub(outPath, opts = {}) {
     <dc:identifier id="bookid">urn:uuid:eupub-test-0001</dc:identifier>
   </metadata>
   <manifest>
-${withNav ? '    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>\n' : ''}    <item id="css" href="style.css" media-type="text/css"/>
+${withNav ? '    <item id="decoy" href="decoy.xhtml" media-type="application/xhtml+xml" properties="ibooks:nav"/>\n    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>\n' : ''}    <item id="css" href="style.css" media-type="text/css"/>
     <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
     <item id="ch2" href="ch2.xhtml" media-type="application/xhtml+xml"/>
 ${nonLinear ? '    <item id="notea" href="notea.xhtml" media-type="application/xhtml+xml"/>\n    <item id="noteb" href="noteb.xhtml" media-type="application/xhtml+xml"/>\n' : ''}  </manifest>
@@ -64,6 +64,12 @@ ${nonLinear ? '    <itemref idref="noteb" linear="no"/>\n' : ''}  </spine>
 </package>`
   );
   if (withNav) {
+    // A decoy carrying a PREFIXED property, listed before the real nav. Per
+    // spec "ibooks:nav" is not the "nav" property, but a substring match treats
+    // it as one — and findNavItem takes the first hit, so the decoy would win
+    // and the TOC would silently degrade to spine filenames. It holds no list,
+    // so if it is ever picked the TOC assertions below fail loudly.
+    add('OEBPS/decoy.xhtml', chapter('Decoy', 'Not a navigation document.'));
     add(
       'OEBPS/nav.xhtml',
       `<?xml version="1.0" encoding="utf-8"?>

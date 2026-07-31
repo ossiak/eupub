@@ -131,9 +131,19 @@
     return model;
   }
 
+  // `properties` is a space-separated token list, so it must be matched a token
+  // at a time. A substring test (/\bnav\b/) also fired on a hyphenated or
+  // prefixed token — "nav-doc", "ibooks:nav" — because "-" and ":" are word
+  // boundaries; per spec those are different properties, not the nav. Since
+  // findNavItem takes the FIRST match, one such item earlier in the manifest
+  // won over the real nav document and the book fell back to a filename TOC.
+  function hasProperty(item, name) {
+    return (item.getAttribute('properties') || '').split(/\s+/).includes(name);
+  }
+
   function findNavItem(book, doc) {
     for (const item of doc.querySelectorAll('manifest > item')) {
-      if (/\bnav\b/.test(item.getAttribute('properties') || '') && item.getAttribute('href')) {
+      if (hasProperty(item, 'nav') && item.getAttribute('href')) {
         const abs = resolve(book.opfDir, item.getAttribute('href'));
         return { absPath: abs, dir: window.eupub.dirname(abs) };
       }
