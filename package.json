@@ -17,7 +17,7 @@
     "build": "npm run build:engine && npm run build:engine:mobile && npm run build:lexicon && npm run build:pdf && npm run build:purify",
     "start": "npm run build && electron .",
     "dev": "electron .",
-    "test": "node --test test/android-bridge.test.js && npm run build && electron test/pipeline.js && electron test/text-pipeline.js && electron test/features.js && electron test/reader-e2e.js",
+    "test": "node --test test/android-bridge.test.js && npm run build && electron test/pipeline.js && electron test/text-pipeline.js && electron test/features.js && electron test/reader-e2e.js && electron test/engine-missing.js",
     "test:smoke": "electron test/smoke.js",
     "icon": "node build/make-icon.js",
     "package": "npm run build && node build/package.js",

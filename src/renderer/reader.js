@@ -113,14 +113,22 @@
     try {
       state.engineSource = await window.eupub.engineSource();
     } catch (err) {
+      // Deliberately does NOT touch prefs.euspell. A missing engine is a
+      // property of this launch, not a preference: `prefs` is the object
+      // savePrefs() serializes, so clearing it here would be written to
+      // localStorage by the next unrelated control the user touches (font,
+      // theme, case-sensitivity) and would survive the engine being rebuilt.
+      // Every consumer already gates on state.engineSource as well, so the
+      // stored preference can stay as the user left it.
       console.error(err);
-      prefs.euspell = false;
       setStatus('left', 'Engine not built — run "npm run build:engine".');
     }
     // The viewer runtime is defined (not run) in this window; ship its source.
     state.runtimeSource = window.EupubViewerRuntime.toString();
 
-    els.euspell.checked = prefs.euspell;
+    // Shown as off while the engine is unavailable, without recording that as
+    // the user's choice — it ticks itself back on once the engine is built.
+    els.euspell.checked = prefs.euspell && !!state.engineSource;
     // Only offer the toggle if the engine actually loaded; otherwise it would
     // silently do nothing (buildSrcdoc skips conversion with no engine source).
     els.euspell.disabled = !state.engineSource;
