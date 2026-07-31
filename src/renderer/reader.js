@@ -387,6 +387,10 @@
     state.searchIndex = new Map();
     state.htmlCache = new Map();
     state.subsetCache = new Map();
+    // No chapter is current until go() below renders one. Carrying the previous
+    // book's index across would give renderChapter's rollback a target from the
+    // wrong book if this book's first chapter turns out to be unreadable.
+    state.index = -1;
     els.searchInput.value = '';
     els.progress.textContent = '';
 
@@ -620,8 +624,12 @@
     opts = opts || {};
     state.find = opts.find || null; // a fresh navigation clears any prior find hit
     index = Math.max(0, Math.min(index, state.model.spine.length - 1));
+    // The index is committed optimistically: the toolbar and TOC update now,
+    // while the chapter's own render is async. renderChapter rolls it back to
+    // `from` if the read fails, since nothing will have been drawn.
+    const from = state.index;
     state.index = index;
-    renderChapter(index, opts);
+    renderChapter(index, opts, from);
     updateNavState();
     highlightToc();
   }
@@ -633,7 +641,14 @@
     renderChapter(state.index, { restore: state.currentLocator });
   }
 
-  async function renderChapter(index, opts) {
+  /**
+   * @param {number} index spine index to render
+   * @param {object} opts
+   * @param {number} [rollbackTo] index to restore if the chapter can't be read.
+   *   Passed by go(), which commits state.index before this async render runs;
+   *   omitted by re-renders of the current chapter, which have nothing to undo.
+   */
+  async function renderChapter(index, opts, rollbackTo) {
     const token = ++state.renderToken;
     const item = state.model.spine[index];
     let html;
@@ -642,6 +657,19 @@
     } catch (err) {
       console.error(err);
       setStatus('left', 'This chapter could not be read.');
+      // Nothing was drawn, so the previous chapter is still on screen — put the
+      // index back to match it. Otherwise every index-keyed thing describes a
+      // chapter the reader can't see: the "Ch n/m" counter, the progress %, the
+      // TOC highlight, the chapter a new bookmark is filed under, and the target
+      // of the next page turn (which would step on from the chapter that failed
+      // rather than from the one being displayed).
+      // Skipped when a newer navigation already moved the index on — that one
+      // owns it now.
+      if (rollbackTo != null && state.index === index) {
+        state.index = rollbackTo;
+        updateNavState();
+        highlightToc();
+      }
       return;
     }
     // A newer render (fast TOC clicks, or a new book) started while the read was
