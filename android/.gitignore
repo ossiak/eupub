@@ -6,6 +6,13 @@ local.properties
 *.iml
 .idea/
 
+# Release signing. keystore.properties holds the keystore path and its passwords;
+# the keystore itself belongs outside the repo entirely, but ignore the extensions
+# too so a stray copy can never be committed. See docs/android-signing.md.
+keystore.properties
+*.jks
+*.keystore
+
 # Generated assets (produced by prepare-assets.mjs from the Eupub renderer + dist)
 app/src/main/assets/reader/
 app/src/main/assets/engine/

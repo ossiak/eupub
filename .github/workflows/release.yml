@@ -2,12 +2,14 @@
 # Release; on a manual run (workflow_dispatch) it uploads each build as a
 # downloadable workflow artifact instead (a dry run with no tag/release).
 #
-#   Linux (ubuntu-latest) -> Eupub-<version>.AppImage
-#   macOS (macos-latest)  -> Eupub-<version>-arm64.dmg, signed + notarized when
+#   Linux (ubuntu-latest)   -> Eupub-<version>.AppImage
+#   macOS (macos-latest)    -> Eupub-<version>-arm64.dmg, signed + notarized when
 #     the signing secrets below are set, otherwise an unsigned dmg.
+#   Windows (windows-latest) -> eupub-Setup-<version>.exe, Authenticode-signed
+#     when WIN_CSC_LINK is set, otherwise an unsigned installer.
 #
-# The two jobs run in parallel and each attaches its own asset (create-or-upload),
-# so there is no ordering dependency and a failure in one still ships the other's.
+# The three jobs run in parallel and each attaches its own asset (create-or-upload),
+# so there is no ordering dependency and a failure in one still ships the others'.
 #
 # Eupub reuses the euspell engine "as-is" from the sibling euspell_ext repo via
 # relative imports (../../../euspell_ext/...), so BOTH repos are checked out
@@ -29,6 +31,15 @@
 #   APPLE_API_KEY_P8   contents of the App Store Connect AuthKey_*.p8
 #   APPLE_API_KEY_ID   the key's ID
 #   APPLE_API_ISSUER   the issuer UUID
+#
+# Windows signing secrets - also optional; without them the Windows job builds an
+# unsigned installer (electron-builder treats an empty WIN_CSC_LINK as "no
+# certificate" and skips signing). See docs/windows-signing.md:
+#   WIN_CSC_LINK          base64 of the code-signing .pfx
+#   WIN_CSC_KEY_PASSWORD  that .pfx's password
+# For the Azure Artifact Signing route instead, set azureSignOptions in
+# package.json and swap those two for AZURE_TENANT_ID / AZURE_CLIENT_ID /
+# AZURE_CLIENT_SECRET.
 name: Release
 
 on:
@@ -219,4 +230,75 @@ jobs:
         with:
           name: eupub-dmg
           path: eupub/release/Eupub-*-arm64.dmg
+          if-no-files-found: error
+
+  nsis:
+    runs-on: windows-latest # signtool.exe is a Windows tool; no cross-signing here
+    steps:
+      - name: Check out eupub
+        uses: actions/checkout@v5
+        with:
+          path: eupub
+      - name: Check out euspell_ext (sibling engine source)
+        uses: actions/checkout@v5
+        with:
+          repository: ossiak/euspell
+          path: euspell_ext
+          token: ${{ secrets.EUSPELL_EXT_TOKEN }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            eupub/package-lock.json
+            euspell_ext/package-lock.json
+
+      - name: Build euspell_ext (engine + lexicon)
+        working-directory: euspell_ext
+        run: npm ci && npm run build
+
+      - name: Install Eupub deps
+        working-directory: eupub
+        run: npm ci
+
+      # Same guard as the other jobs, in PowerShell (windows-latest runs `run:`
+      # steps under pwsh).
+      - name: Check tag matches package.json version
+        if: github.ref_type == 'tag'
+        working-directory: eupub
+        run: |
+          $pkg = "v" + (node -p "require('./package.json').version")
+          if ($pkg -ne $env:GITHUB_REF_NAME) {
+            echo "::error::tag $env:GITHUB_REF_NAME != package.json $pkg -- bump package.json to match the tag"
+            exit 1
+          }
+
+      # No "configure signing" step is needed here, unlike the dmg job:
+      # electron-builder explicitly treats an empty WIN_CSC_LINK as "no
+      # certificate" and builds an unsigned installer, so absent secrets are safe.
+      - name: Build installer
+        working-directory: eupub
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: npm run dist
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        working-directory: eupub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $title = "Eupub " + ($env:GITHUB_REF_NAME -replace '^v', '')
+          gh release create "$env:GITHUB_REF_NAME" (Get-Item release/eupub-Setup-*.exe) --title "$title" --generate-notes
+          if ($LASTEXITCODE -ne 0) {
+            gh release upload "$env:GITHUB_REF_NAME" (Get-Item release/eupub-Setup-*.exe) --clobber
+          }
+
+      - name: Upload installer artifact (dry run)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v6
+        with:
+          name: eupub-nsis
+          path: eupub/release/eupub-Setup-*.exe
           if-no-files-found: error
