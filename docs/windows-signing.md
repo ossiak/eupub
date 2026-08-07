@@ -271,12 +271,46 @@ leaves it out otherwise, so forks, pull requests and the non-tag dry run all
 still produce an unsigned installer rather than failing. That mirrors what the
 `dmg` job does when it patches `mac.notarize` on seeing a notary key.
 
-Rotating the client secret is therefore a secrets-only change: update
-`AZURE_CLIENT_SECRET` and nothing in the repository moves.
-
 > **A USB token cannot be used from a GitHub-hosted runner.** If you go that
 > route, either sign locally and upload the artifact by hand, or register a
 > self-hosted runner on the machine the token is plugged into.
+
+### Rotating the client secret
+
+A secrets-only change — nothing in either repository moves. Add the replacement
+before removing the old one, so a problem at step 5 costs nothing.
+
+1. **Find the app registration.** Portal ▸ **Microsoft Entra ID** (formerly Azure
+   Active Directory) ▸ **App registrations**. If it is not under *Owned
+   applications*, switch to **All applications** and search for the client id —
+   the same value as `AZURE_CLIENT_ID`.
+2. **Add the new secret.** *Certificates & secrets* ▸ **Client secrets** ▸
+   **+ New client secret**. Description, expiry, **Add**.
+3. **Copy the Value at once.** The table shows **Value** and **Secret ID**; the
+   credential is *Value*, and it is displayed only immediately after creation —
+   navigate away and it cannot be recovered, only replaced. (Secret ID is an
+   identifier, not a credential. Easy to grab by mistake.)
+4. **Update GitHub.** Repo ▸ Settings ▸ Secrets and variables ▸ Actions ▸
+   `AZURE_CLIENT_SECRET` ▸ Update.
+5. **Verify before deleting anything.** Run the release workflow from the Actions
+   tab on a non-tag ref: that takes the dry-run path, which builds and uploads an
+   artifact without publishing a release. The log should report *Azure Artifact
+   Signing configured*, and the build should sign.
+6. **Then delete the old secret** in *Certificates & secrets*.
+
+**The role assignment is not affected.** *Artifact Signing Certificate Profile
+Signer* is granted to the service principal, not to any particular secret, so
+there is nothing to re-grant afterwards.
+
+> **A client secret expires, and its expiry is a scheduled outage.** Entra caps
+> them at 24 months and the portal defaults to 6. When one lapses, signing fails
+> on the next release — likely months later, with an authentication error that
+> does not obviously point back here. Put the expiry date in a calendar with a
+> reminder ahead of it.
+
+Once the secret is in GitHub Actions, delete any copy left on disk. Nothing needs
+it locally: signing happens only in CI, and `npm run dist` on a workstation
+deliberately produces an unsigned installer.
 
 ## Testing the pipeline without a real certificate
 
