@@ -67,12 +67,6 @@
       ],
       "icon": "build/icon.ico",
       "artifactName": "eupub-Setup-${version}.${ext}",
-      "signtoolOptions": {
-        "signingHashAlgorithms": [
-          "sha256"
-        ],
-        "rfc3161TimeStampServer": "http://timestamp.digicert.com"
-      },
       "fileAssociations": [
         {
           "ext": "epub",

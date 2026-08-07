@@ -6,7 +6,8 @@
 #   macOS (macos-latest)    -> Eupub-<version>-arm64.dmg, signed + notarized when
 #     the signing secrets below are set, otherwise an unsigned dmg.
 #   Windows (windows-latest) -> eupub-Setup-<version>.exe, Authenticode-signed
-#     when WIN_CSC_LINK is set, otherwise an unsigned installer.
+#     via Azure Artifact Signing when AZURE_CLIENT_ID is set, otherwise an
+#     unsigned installer.
 #
 # The three jobs run in parallel and each attaches its own asset (create-or-upload),
 # so there is no ordering dependency and a failure in one still ships the others'.
@@ -33,13 +34,16 @@
 #   APPLE_API_ISSUER   the issuer UUID
 #
 # Windows signing secrets - also optional; without them the Windows job builds an
-# unsigned installer (electron-builder treats an empty WIN_CSC_LINK as "no
-# certificate" and skips signing). See docs/windows-signing.md:
-#   WIN_CSC_LINK          base64 of the code-signing .pfx
-#   WIN_CSC_KEY_PASSWORD  that .pfx's password
-# For the Azure Artifact Signing route instead, set azureSignOptions in
-# package.json and swap those two for AZURE_TENANT_ID / AZURE_CLIENT_ID /
-# AZURE_CLIENT_SECRET.
+# unsigned installer. Signing goes through Azure Artifact Signing (account
+# euspell, profile euspell-public), so there is no certificate file anywhere -
+# signing is an API call and the credentials are a service principal holding the
+# "Artifact Signing Certificate Profile Signer" role. See docs/windows-signing.md:
+#   AZURE_TENANT_ID       directory (tenant) id
+#   AZURE_CLIENT_ID       app registration client id; also the presence check
+#   AZURE_CLIENT_SECRET   that app registration's client secret
+# AZURE_CLIENT_ID doubles as the switch: the Configure signing step injects
+# build.win.azureSignOptions only when it is set, because electron-builder cannot
+# be asked to skip Azure signing once that block exists.
 name: Release
 
 on:
@@ -273,14 +277,35 @@ jobs:
             exit 1
           }
 
-      # No "configure signing" step is needed here, unlike the dmg job:
-      # electron-builder explicitly treats an empty WIN_CSC_LINK as "no
-      # certificate" and builds an unsigned installer, so absent secrets are safe.
+      # azureSignOptions is injected here rather than committed to package.json,
+      # and that is the whole reason this step exists. electron-builder picks its
+      # signing manager purely on the presence of that block (winPackager.ts), with
+      # no check that credentials exist — so a committed block would make an
+      # unsigned Windows build impossible, and every run without the secrets (a
+      # fork, a PR, the non-tag dry run below) would fail instead of producing an
+      # unsigned installer. Absent, the signtool manager takes over and skips
+      # signing when no certificate is configured, which is the behaviour we want
+      # as the default. Same shape as the dmg job's notarize=true patch above.
+      - name: Configure signing
+        working-directory: eupub
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        run: |
+          if ($env:AZURE_CLIENT_ID) {
+            node -e "const f='package.json',p=require('./'+f);p.build.win.azureSignOptions={endpoint:'https://eus.codesigning.azure.net',codeSigningAccountName:'euspell',certificateProfileName:'euspell-public'};require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')"
+            echo "Azure Artifact Signing configured (account euspell, profile euspell-public)."
+          } else {
+            echo "No Azure credentials configured -- building an unsigned installer."
+          }
+
       - name: Build installer
         working-directory: eupub
         env:
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          # Read by Azure's EnvironmentCredential inside the TrustedSigning module.
+          # Ignored entirely when the step above left azureSignOptions unset.
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
         run: npm run dist
 
       - name: Publish release

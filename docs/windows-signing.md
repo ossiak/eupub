@@ -41,28 +41,54 @@ is the single fact that decides which of these you pick:
 
 ## Step 2 — Configure electron-builder
 
+> **Chosen: Azure Artifact Signing.** The account is provisioned — signing
+> account `euspell`, certificate profile `euspell-public`, with a service
+> principal holding the *Artifact Signing Certificate Profile Signer* role. So
+> 2a below is the live path and 2b is kept for reference only.
+
 electron-builder 26 (the version pinned here) splits Windows signing into two
 mutually exclusive blocks under `build.win` in
-[`package.json`](../package.json). **`signtoolOptions` is already there** (2b),
-which covers a `.pfx` and a cloud-HSM hook; if you choose Azure instead, replace
-it with the `azureSignOptions` block — having both is a configuration error.
+[`package.json`](../package.json) — having both is a configuration error
+(electron-builder warns and uses Azure).
+
+**Neither block is committed**, and that is deliberate rather than an oversight.
+`winPackager` chooses its signing manager on the *presence* of `azureSignOptions`
+alone, with no check that credentials exist:
+
+```js
+if (this.platformSpecificBuildOptions.azureSignOptions != null) {
+  manager = new WindowsSignAzureManager(this)   // installs the TrustedSigning
+} else {                                        // module, then signs — or fails
+  manager = new WindowsSignToolManager(this)    // skips when no cert configured
+}
+```
+
+A committed `azureSignOptions` would therefore make an unsigned Windows build
+*impossible*: every run without the secrets — a fork, a pull request, the release
+workflow's own non-tag dry run — would fail rather than produce an unsigned
+installer. So the release workflow's **Configure signing** step injects the block
+into `package.json` at build time when `AZURE_CLIENT_ID` is set, exactly as the
+dmg job patches `mac.notarize`. Locally, `npm run dist` produces an unsigned
+installer and needs no credentials at all.
 
 ### 2a — Azure Artifact Signing
 
+This is what the workflow injects (and what to paste into `build.win` if you ever
+want to sign a build by hand):
+
 ```jsonc
-"win": {
-  "target": ["nsis"],
-  "icon": "build/icon.ico",
-  "artifactName": "eupub-Setup-${version}.${ext}",
-  "azureSignOptions": {
-    "publisherName": "Kamran Ossia",          // exact CN of the certificate
-    "endpoint": "https://eus.codesigning.azure.net",
-    "codeSigningAccountName": "euspell",       // your Trusted Signing account
-    "certificateProfileName": "euspell-public"
-  },
-  "fileAssociations": [ /* unchanged */ ]
+"azureSignOptions": {
+  "endpoint": "https://eus.codesigning.azure.net",   // must match the account's region
+  "codeSigningAccountName": "euspell",
+  "certificateProfileName": "euspell-public"
 }
 ```
+
+`publisherName` is deliberately omitted. It is used to verify updates and must be
+byte-identical to the certificate's CN, and electron-builder cannot read the CN
+back off the Azure service — `computedPublisherName` returns null with a TODO to
+that effect. A wrong value is worse than none, so set it only once you have read
+the exact CN off a signed binary (`signtool verify /pa /v`).
 
 Authentication is by environment variable (Azure's `EnvironmentCredential`), so
 nothing secret goes in the repo:
@@ -79,8 +105,10 @@ role on the signing account. Timestamping is automatic
 
 ### 2b — A `.pfx` file (legacy certs and self-signed tests)
 
-**This block is already in [`package.json`](../package.json)** and is inert until
-a certificate shows up:
+Not the route in use, and **not in [`package.json`](../package.json)** — it was
+removed when Azure was chosen, since the two blocks are mutually exclusive. Add
+it back only if you abandon Azure. Unlike `azureSignOptions` it is safe to commit,
+because it stays inert until `CSC_LINK` names a certificate:
 
 ```jsonc
 "win": {
@@ -187,24 +215,27 @@ create-or-upload publish. Until then the `.exe` on the Releases page was built b
 hand.
 
 It builds an **unsigned** installer out of the box and signs automatically once
-you add two repository secrets (Settings ▸ Secrets and variables ▸ Actions):
+you add three repository secrets (Settings ▸ Secrets and variables ▸ Actions):
 
 | Secret | What it is |
 | --- | --- |
-| `WIN_CSC_LINK` | base64 of your code-signing `.pfx` — `[Convert]::ToBase64String([IO.File]::ReadAllBytes("cert.pfx")) \| Set-Clipboard` |
-| `WIN_CSC_KEY_PASSWORD` | that `.pfx`'s password |
+| `AZURE_TENANT_ID` | directory (tenant) id of the app registration |
+| `AZURE_CLIENT_ID` | its client id — **also the presence check** the workflow branches on |
+| `AZURE_CLIENT_SECRET` | its client secret |
 
-Unlike the `dmg` job, this needs no "configure signing" step to handle the
-secrets being absent: electron-builder checks `cscLink == null || cscLink === ""`
-before doing anything, so an empty secret means *unsigned*, not *broken*. Forks
-and dry runs keep working.
+The service principal needs the *Artifact Signing Certificate Profile Signer*
+role on the `euspell` signing account; that assignment is already in place.
 
-**For the Azure route (2a)** swap those two secrets for `AZURE_TENANT_ID`,
-`AZURE_CLIENT_ID` and `AZURE_CLIENT_SECRET` on the *Build installer* step, and
-add `azureSignOptions` to `package.json`. Note that `azureSignOptions` is not
-inert the way `signtoolOptions` is — once the block exists, electron-builder
-routes signing through Azure and fails if it can't authenticate, so add it and
-the secrets in the same change.
+Because `azureSignOptions` is **not** inert the way `signtoolOptions` is — once
+the block exists electron-builder routes signing through Azure and fails if it
+cannot authenticate — the job cannot simply carry it in `package.json`. Instead a
+**Configure signing** step injects the block when `AZURE_CLIENT_ID` is set, and
+leaves it out otherwise, so forks, pull requests and the non-tag dry run all
+still produce an unsigned installer rather than failing. That mirrors what the
+`dmg` job does when it patches `mac.notarize` on seeing a notary key.
+
+Rotating the client secret is therefore a secrets-only change: update
+`AZURE_CLIENT_SECRET` and nothing in the repository moves.
 
 > **A USB token cannot be used from a GitHub-hosted runner.** If you go that
 > route, either sign locally and upload the artifact by hand, or register a
