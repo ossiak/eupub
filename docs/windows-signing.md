@@ -84,11 +84,47 @@ want to sign a build by hand):
 }
 ```
 
-`publisherName` is deliberately omitted. It is used to verify updates and must be
-byte-identical to the certificate's CN, and electron-builder cannot read the CN
-back off the Azure service — `computedPublisherName` returns null with a TODO to
-that effect. A wrong value is worse than none, so set it only once you have read
-the exact CN off a signed binary (`signtool verify /pa /v`).
+#### `publisherName` is omitted, and is currently inert
+
+Not a TODO — there is nothing in Eupub that reads it. Its only consumer outside
+the Appx target is one line of `PublishManager`:
+
+```js
+const publisherName = winPackager.isForceCodeSigningVerification
+  ? (await winPackager.signingManager.value).computedPublisherName.value
+  : undefined
+```
+
+which writes the publisher into the update metadata so **electron-updater** can
+check that a downloaded update was signed by the same publisher as the installed
+copy. Eupub has no updater package, no `autoUpdater` in `src/`, and no
+`build.publish`; it targets `nsis`, and the NSIS target never reads the field at
+all. So it starts mattering the day auto-update is added, and not before.
+
+**When that day comes, do not guess it.** It has to be byte-identical to the
+certificate's CN — a wrong value is worse than none, because it is exactly what
+update verification compares — and electron-builder cannot read the CN back off
+the Azure service (`computedPublisherName` returns null with a TODO saying so).
+Three ways to get it, in increasing order of reliability:
+
+1. **Azure Portal** — the `euspell` signing account ▸ *Certificate profiles* ▸
+   `euspell-public`. The subject comes from your identity validation: the
+   validated legal name for an individual account, the organisation name for an
+   organisation. Note the certificates themselves are short-lived and rotate,
+   but the subject is fixed by the *profile*, so this value is stable.
+2. **Azure CLI** — the `trustedsigning` extension
+   (`az extension add --name trustedsigning`) can show the profile. Check
+   `az trustedsigning certificate-profile --help` for the current syntax.
+3. **Off a signed binary** — the literal string electron-builder will compare
+   against, so this is the one to trust:
+
+   ```powershell
+   (Get-AuthenticodeSignature .\release\eupub-Setup-0.2.2.exe).SignerCertificate.Subject
+   signtool verify /pa /v .\release\eupub-Setup-0.2.2.exe
+   ```
+
+Since the field is inert until auto-update exists, the easy path is to ship the
+first signed release without it and read the CN off that artifact.
 
 Authentication is by environment variable (Azure's `EnvironmentCredential`), so
 nothing secret goes in the repo:
@@ -120,10 +156,11 @@ because it stays inert until `CSC_LINK` names a certificate:
 }
 ```
 
-Add `"publisherName": "…"` to it only once you have the certificate in hand, and
-make it byte-identical to the certificate's CN — it's used to verify updates, and
-a wrong value is worse than none. (Left out, electron-builder reads the CN off
-the certificate itself.)
+`publisherName` is as inert here as it is under Azure — see
+[above](#publishername-is-omitted-and-is-currently-inert) for why nothing in
+Eupub reads it yet. The one difference is that this route can fill it in for you:
+given a `.pfx`, electron-builder reads the CN off the certificate file, which the
+Azure service cannot do.
 
 Keep the certificate **out of the config and out of git** — pass it in the
 environment:
