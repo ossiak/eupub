@@ -340,8 +340,19 @@ jobs:
           echo "--- role assignments visible to this principal (may be denied):"
           az role assignment list --assignee $env:AZURE_CLIENT_ID --scope $acct --include-inherited -o json 2>&1
 
-          echo "--- certificate profile (needs reader; may be denied):"
-          az resource show --ids "$acct/certificateProfiles/euspell-public" --query "{status:properties.status,state:properties.provisioningState}" -o json 2>&1
+          # Full properties, not just status: a profile can read Active while
+          # being bound to the wrong thing. profileType and the linked identity
+          # validation are what to compare — a PublicTrust profile wants a
+          # completed validation of the matching kind, and a mismatch there
+          # presents as a 403 at sign time with everything else looking correct.
+          echo "--- certificate profile, full properties:"
+          az resource show --ids "$acct/certificateProfiles/euspell-public" --query properties -o json 2>&1
+
+          echo "--- all certificate profiles on the account:"
+          az resource list --resource-group euspell-signing --resource-type "Microsoft.CodeSigning/codeSigningAccounts/certificateProfiles" -o json 2>&1
+
+          echo "--- the signing account itself (sku, state):"
+          az resource show --ids $acct --query "{sku:sku,properties:properties}" -o json 2>&1
 
       - name: Build installer
         working-directory: eupub
