@@ -298,6 +298,51 @@ jobs:
             echo "No Azure credentials configured -- building an unsigned installer."
           }
 
+      # TEMPORARY. Signing fails with a bare 403 and an empty body, which says
+      # only "authenticated, not authorised" — it names neither the principal nor
+      # the missing permission. This identifies which principal CI actually
+      # authenticates as. It cannot simply print the client id: GitHub masks a
+      # secret's value wherever it appears in a log, so the id would come out as
+      # ***. A hash is not the secret, so it survives masking and can be compared
+      # against the hash of a known id computed locally.
+      #
+      # Dry run only (workflow_dispatch), never on a tag, and continue-on-error
+      # so a diagnostic can never fail a release. Delete once the 403 is explained.
+      - name: Diagnose Azure identity (dry run only)
+        if: github.ref_type != 'tag'
+        continue-on-error: true
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: |
+          if (-not $env:AZURE_CLIENT_ID) { echo "no Azure credentials — nothing to diagnose"; exit 0 }
+          function Hash16($s) {
+            $b = [Text.Encoding]::UTF8.GetBytes($s)
+            $ms = [IO.MemoryStream]::new($b)
+            (Get-FileHash -InputStream $ms -Algorithm SHA256).Hash.Substring(0,16).ToLower()
+          }
+          echo "client id sha256[0:16] = $(Hash16 $env:AZURE_CLIENT_ID)"
+          echo "tenant id sha256[0:16] = $(Hash16 $env:AZURE_TENANT_ID)"
+
+          $acct = "/subscriptions/9ed1f379-1ce1-43ee-9ff2-656c054000e1/resourceGroups/euspell-signing/providers/Microsoft.CodeSigning/codeSigningAccounts/euspell"
+          az login --service-principal -u $env:AZURE_CLIENT_ID -p $env:AZURE_CLIENT_SECRET --tenant $env:AZURE_TENANT_ID --allow-no-subscriptions --only-show-errors | Out-Null
+          echo "--- login exit: $LASTEXITCODE"
+
+          # The service principal's own object id. Not a secret, so it prints in
+          # full — and cred.txt records which object id was granted the role.
+          echo "--- service principal object id:"
+          az ad sp show --id $env:AZURE_CLIENT_ID --query "{objectId:id,displayName:displayName}" -o json 2>&1
+
+          # Listing role assignments needs Microsoft.Authorization/.../read, which
+          # the Signer role does NOT grant — so an empty result or an error here
+          # is expected and proves nothing either way. Printed for completeness.
+          echo "--- role assignments visible to this principal (may be denied):"
+          az role assignment list --assignee $env:AZURE_CLIENT_ID --scope $acct --include-inherited -o json 2>&1
+
+          echo "--- certificate profile (needs reader; may be denied):"
+          az resource show --ids "$acct/certificateProfiles/euspell-public" --query "{status:properties.status,state:properties.provisioningState}" -o json 2>&1
+
       - name: Build installer
         working-directory: eupub
         env:
