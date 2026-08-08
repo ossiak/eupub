@@ -38,7 +38,7 @@
     "dompurify": "^3.4.12"
   },
   "build": {
-    "appId": "com.euspell.eupub",
+    "appId": "org.euspell.eupub",
     "productName": "Eupub",
     "copyright": "GPL-3.0-or-later",
     "directories": {

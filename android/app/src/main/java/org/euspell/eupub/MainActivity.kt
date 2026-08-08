@@ -1,4 +1,4 @@
-package com.euspell.eupub
+package org.euspell.eupub
 
 import android.annotation.SuppressLint
 import android.content.Intent

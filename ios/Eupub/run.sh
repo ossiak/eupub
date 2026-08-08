@@ -9,7 +9,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-BUNDLE_ID="com.euspell.Eupub"
+BUNDLE_ID="org.euspell.eupub.ios"
 SCHEME="Eupub"
 
 # --- preflight -------------------------------------------------------------

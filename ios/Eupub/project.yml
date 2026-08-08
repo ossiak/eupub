@@ -8,7 +8,7 @@
 name: Eupub
 
 options:
-  bundleIdPrefix: com.euspell
+  bundleIdPrefix: org.euspell
   # iOS 17 matches the App Store listing's floor (docs/installing.md). It also
   # keeps the reader's WKWebView on a modern system WebKit — container queries,
   # :has(), CSS nesting — since that engine is pinned to the OS version.
@@ -47,4 +47,4 @@ targets:
         # Simulator builds need no team/identity — keeps the app runnable without
         # an Apple Developer account (device builds set a team in Xcode later).
         CODE_SIGNING_ALLOWED: NO
-        PRODUCT_BUNDLE_IDENTIFIER: com.euspell.Eupub
+        PRODUCT_BUNDLE_IDENTIFIER: org.euspell.eupub.ios

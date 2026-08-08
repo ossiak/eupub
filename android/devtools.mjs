@@ -100,7 +100,7 @@ function webviewSocket(dev) {
   if (!m) {
     throw new Error(
       'no WebView devtools socket — is the app running? Launch it with:\n' +
-        `  adb -s ${dev} shell am start -n com.euspell.eupub/.MainActivity`
+        `  adb -s ${dev} shell am start -n org.euspell.eupub/.MainActivity`
     );
   }
   return m[1];
