@@ -78,24 +78,30 @@ want to sign a build by hand):
 
 ```jsonc
 "azureSignOptions": {
-  "endpoint": "https://wus.codesigning.azure.net",   // wus = West US, the account's region
+  "endpoint": "https://wus2.codesigning.azure.net",
   "codeSigningAccountName": "euspell",
   "certificateProfileName": "euspell-public"
 }
 ```
 
-**The endpoint is regional and must match where the account lives.** This is not
-a detail the service is forgiving about: a request to the wrong regional endpoint
-is rejected with a bare `403 Forbidden` and an empty body, which reads exactly
-like a permissions problem and sends you looking at role assignments. That cost a
-release run. The account is in **West US**, hence `wus`; `eus` is East US, `neu`
-North Europe, `weu` West Europe.
-
-Read it off the account rather than copying it from anyone's example:
+**Do not derive the endpoint from the region name — read it off the account.**
+The account publishes the exact URI to use:
 
 ```sh
-az resource show --ids "/subscriptions/<sub>/resourceGroups/euspell-signing/providers/Microsoft.CodeSigning/codeSigningAccounts/euspell" --query location -o tsv
+az resource show --ids "/subscriptions/<sub>/resourceGroups/euspell-signing/providers/Microsoft.CodeSigning/codeSigningAccounts/euspell" --query properties.accountUri -o tsv
+# https://wus2.codesigning.azure.net/
 ```
+
+This is worth the one command, because getting it wrong is expensive and the
+error does not point at it. A request to the wrong regional endpoint is refused
+with a bare `403 Forbidden` and an empty body — indistinguishable from a
+permissions problem, and it sends you auditing role assignments and service
+principals instead. It cost three release runs here.
+
+And guessing is easy: the account sits in **West US 2**, whose prefix is `wus2`.
+"West US" would have been `wus`, which is a different, real endpoint that also
+answers, and also 403s. Region *names* map to prefixes unreliably; `accountUri`
+is authoritative.
 
 #### `publisherName` is required by the schema, but inert at runtime
 
