@@ -78,10 +78,23 @@ want to sign a build by hand):
 
 ```jsonc
 "azureSignOptions": {
-  "endpoint": "https://eus.codesigning.azure.net",   // must match the account's region
+  "endpoint": "https://wus.codesigning.azure.net",   // wus = West US, the account's region
   "codeSigningAccountName": "euspell",
   "certificateProfileName": "euspell-public"
 }
+```
+
+**The endpoint is regional and must match where the account lives.** This is not
+a detail the service is forgiving about: a request to the wrong regional endpoint
+is rejected with a bare `403 Forbidden` and an empty body, which reads exactly
+like a permissions problem and sends you looking at role assignments. That cost a
+release run. The account is in **West US**, hence `wus`; `eus` is East US, `neu`
+North Europe, `weu` West Europe.
+
+Read it off the account rather than copying it from anyone's example:
+
+```sh
+az resource show --ids "/subscriptions/<sub>/resourceGroups/euspell-signing/providers/Microsoft.CodeSigning/codeSigningAccounts/euspell" --query location -o tsv
 ```
 
 #### `publisherName` is required by the schema, but inert at runtime
@@ -93,7 +106,7 @@ tagged Windows build failed.
 and types it `string`, so leaving it out — or setting it to `null` — fails
 validation before the build starts:
 
-```
+```text
 configuration.win.azureSignOptions should be one of these: null
 ```
 
@@ -185,7 +198,7 @@ because it stays inert until `CSC_LINK` names a certificate:
 ```
 
 `publisherName` is as inert here as it is under Azure — see
-[above](#publishername-is-omitted-and-is-currently-inert) for why nothing in
+[above](#publishername-is-required-by-the-schema-but-inert-at-runtime) for why nothing in
 Eupub reads it yet. The one difference is that this route can fill it in for you:
 given a `.pfx`, electron-builder reads the CN off the certificate file, which the
 Azure service cannot do.

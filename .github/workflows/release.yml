@@ -292,7 +292,7 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
         run: |
           if ($env:AZURE_CLIENT_ID) {
-            node -e "const f='package.json',p=require('./'+f);p.build.win.azureSignOptions={publisherName:'Kamran Ossia',endpoint:'https://eus.codesigning.azure.net',codeSigningAccountName:'euspell',certificateProfileName:'euspell-public'};require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')"
+            node -e "const f='package.json',p=require('./'+f);p.build.win.azureSignOptions={publisherName:'Kamran Ossia',endpoint:'https://wus.codesigning.azure.net',codeSigningAccountName:'euspell',certificateProfileName:'euspell-public'};require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')"
             echo "Azure Artifact Signing configured (account euspell, profile euspell-public)."
           } else {
             echo "No Azure credentials configured -- building an unsigned installer."
