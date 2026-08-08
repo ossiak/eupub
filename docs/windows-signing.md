@@ -119,8 +119,8 @@ Three ways to get it, in increasing order of reliability:
    against, so this is the one to trust:
 
    ```powershell
-   (Get-AuthenticodeSignature .\release\eupub-Setup-0.2.2.exe).SignerCertificate.Subject
-   signtool verify /pa /v .\release\eupub-Setup-0.2.2.exe
+   (Get-AuthenticodeSignature .\release\eupub-Setup-*.exe).SignerCertificate.Subject
+   signtool verify /pa /v .\release\eupub-Setup-*.exe
    ```
 
 Since the field is inert until auto-update exists, the easy path is to ship the
@@ -227,10 +227,10 @@ server.
 
 ```powershell
 # Signature present, chain valid, and who it says signed it:
-Get-AuthenticodeSignature .\release\eupub-Setup-0.2.2.exe | Format-List Status, SignerCertificate, TimeStamperCertificate
+Get-AuthenticodeSignature .\release\eupub-Setup-*.exe | Format-List Status, SignerCertificate, TimeStamperCertificate
 
 # The same check signtool's way (needs the Windows SDK); /pa = Authenticode policy:
-signtool verify /pa /v .\release\eupub-Setup-0.2.2.exe
+signtool verify /pa /v .\release\eupub-Setup-*.exe
 ```
 
 `Status : Valid` plus a non-null `TimeStamperCertificate` is what you want. Then

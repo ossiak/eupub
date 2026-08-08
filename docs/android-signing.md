@@ -215,8 +215,9 @@ re-signs your upload with a key it holds:
   display and the WebView/storage rules, both of which touch this app).
 - **`versionCode` must increase with every upload** and is currently pinned at
   `1`, with `versionName = "0.1.0"` while [`package.json`](../package.json) says
-  `0.2.2`. Reconcile the two before the first release — deriving both from
-  `package.json` in `prepare-assets.mjs` is the tidy fix.
+  `0.2.3` — and the gap widens with every desktop release, since nothing ties
+  them together. Reconcile the two before the first Play upload; deriving both
+  from `package.json` in `prepare-assets.mjs` is the tidy fix.
 
 ## Signing in CI
 
