@@ -1,17 +1,23 @@
 # Signing Eupub for Windows
 
-By default `npm run dist` produces an **unsigned** `release/eupub-Setup-<version>.exe`.
-It installs fine, but every user meets **SmartScreen** first —
-*"Windows protected your PC — Microsoft Defender SmartScreen prevented an
-unrecognized app from starting"* — and has to click **More info ▸ Run anyway**.
-That warning is what [installing.md](installing.md) currently tells people to
-expect. Authenticode-signing the installer replaces "unknown publisher" with your
-name in the UAC prompt, and (with enough reputation, or an EV certificate)
-removes the warning entirely.
+**Released installers are signed.** Since v0.2.3 the `nsis` job Authenticode-signs
+`eupub-Setup-<version>.exe` through Azure Artifact Signing, so the UAC prompt
+names the publisher rather than saying *Unknown publisher*.
 
-This is the one-time setup. electron-builder does all the signing — of
-`Eupub.exe` *and* of the NSIS installer that wraps it — as part of the normal
-build, once you tell it which credential to use. Nothing in `src/` changes.
+A local `npm run dist` is **not** signed, and never will be: the credentials live
+only in CI. It installs fine, but meets **SmartScreen** first — *"Windows
+protected your PC — Microsoft Defender SmartScreen prevented an unrecognized app
+from starting"* — and needs **More info ▸ Run anyway**.
+
+Signing does not silence SmartScreen on day one either. Reputation accrues per
+certificate as installs accumulate, so a new certificate still shows the warning
+for a while; only EV starts with reputation.
+[installing.md](installing.md) tells users what to expect in the meantime.
+
+This document is the setup behind all that — kept for maintenance, for rotating
+credentials, and for anyone reproducing it. electron-builder does the signing —
+of `Eupub.exe` *and* of the NSIS installer that wraps it — as part of the normal
+build. Nothing in `src/` changes.
 
 > **Signing runs on Windows.** `signtool.exe` and the Azure signing module are
 > Windows tools. Build on your own Windows machine or a `windows-latest` CI

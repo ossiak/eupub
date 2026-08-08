@@ -34,9 +34,14 @@ Open the latest release and pick the file for your platform:
 ## Windows
 
 1. Download `eupub-Setup-<version>.exe` and run it.
-2. Eupub isn't code-signed yet, so **SmartScreen** shows *"Windows protected your
-   PC."* Click **More info → Run anyway**. (This is expected for an unsigned app;
-   the only way to remove the prompt is a paid signing certificate.)
+2. The installer is **Authenticode-signed**, so the User Account Control prompt
+   names the publisher — *Kamran Ossia* — instead of *Unknown publisher*.
+
+   **SmartScreen may still warn you for a while.** Its reputation builds per
+   signing certificate as installs accumulate, and Eupub's certificate is new, so
+   early downloads can still meet *"Windows protected your PC."* Click **More
+   info → Run anyway**. That fades on its own as the certificate ages; there is
+   nothing to do at your end, and nothing is wrong with the download.
 3. The installer lets you **choose the install folder** (default
    `%LOCALAPPDATA%\Programs\Eupub`), then creates **Start-menu and desktop
    shortcuts**.
@@ -136,8 +141,10 @@ Everything is local — no book, position, or highlight ever leaves the device.
 If there's no prebuilt file for your platform, or you want to run from source:
 
 - **Windows / Linux desktop** — `npm run dist` (Windows NSIS installer) or
-  `npm run dist:linux` (Linux AppImage). See **Build a standalone installer** in
-  the [README](../README.md).
+  `npm run dist:linux` (Linux AppImage). A build of your own is **unsigned**, so
+  unlike the released installer it shows *Unknown publisher* and a firmer
+  SmartScreen warning; [windows-signing.md](windows-signing.md) covers signing
+  one. See **Build a standalone installer** in the [README](../README.md).
 - **macOS** — `npm run dist:mac` on a Mac (Apple Silicon) →
   `release/Eupub-<version>-arm64.dmg`. dmg building is macOS-only. To ship it
   **signed and notarized** so it opens with no Gatekeeper prompt, follow
@@ -160,7 +167,7 @@ If there's no prebuilt file for your platform, or you want to run from source:
 
 | Symptom | Try |
 | --- | --- |
-| Windows: *"Windows protected your PC"* | Expected — the app is unsigned. **More info → Run anyway**. |
+| Windows: *"Windows protected your PC"* | The installer *is* signed, but SmartScreen reputation accrues per certificate and Eupub's is new, so early downloads still see this. **More info → Run anyway**. Worth checking the UAC prompt names *Kamran Ossia* as publisher — *Unknown publisher* means an unofficial or self-built copy. |
 | Linux: AppImage won't start / mount error | Install FUSE 2, or run `./Eupub-*.AppImage --appimage-extract-run`. Confirm it's executable (`chmod +x`). |
 | Android: *"App not installed"* or blocked | Allow **Install unknown apps** for the app opening the APK; in Play Protect choose **Install anyway**. Check the phone is Android 8.0+. |
 | iOS: can't find Eupub in the App Store | It needs **iOS 17 or later** — older iPhones/iPads won't see the listing. Check for an OS update (and your store region). |

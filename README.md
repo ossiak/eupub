@@ -73,8 +73,10 @@ picks an install location and gets Start-menu/desktop shortcuts and an
 uninstaller. It installs to `%LOCALAPPDATA%\Programs\eupub` by default and
 launches fast (extracted once). The icon is the committed `build/icon.ico`.
 
-> Unsigned, so Windows SmartScreen shows an "unknown publisher" prompt
-> ("More info → Run anyway"). Removing it requires code signing.
+> A build of your own is **unsigned**, so Windows SmartScreen shows an "unknown
+> publisher" prompt ("More info → Run anyway"). Released installers are
+> Authenticode-signed in CI through Azure Artifact Signing — see
+> [docs/windows-signing.md](docs/windows-signing.md).
 
 The **macOS** target builds an Apple-Silicon `.dmg` and must run on a Mac (dmg
 tooling is macOS-only). By default it's **unsigned**, so Gatekeeper blocks the
