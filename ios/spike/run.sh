@@ -12,7 +12,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-BUNDLE_ID="com.euspell.EupubOriginSpike"
+BUNDLE_ID="org.euspell.eupuboriginspike"
 SCHEME="EupubOriginSpike"
 
 # --- preflight -------------------------------------------------------------

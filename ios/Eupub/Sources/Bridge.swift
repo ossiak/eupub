@@ -10,7 +10,7 @@ import UniformTypeIdentifiers
 final class Bridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate, UIDocumentPickerDelegate {
     weak var webView: WKWebView?
     let bookStore = BookStore() // shared with the SchemeHandler (serves /book/…)
-    private let work = DispatchQueue(label: "com.euspell.eupub.bridge")
+    private let work = DispatchQueue(label: "org.euspell.eupub.bridge")
     private lazy var lexicon = Lexicon()
 
     private let wwwRoot = Bundle.main.resourceURL!.appendingPathComponent("www")

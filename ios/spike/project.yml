@@ -8,7 +8,7 @@
 name: EupubOriginSpike
 
 options:
-  bundleIdPrefix: com.euspell
+  bundleIdPrefix: org.euspell
   # iOS 15 is Eupub's floor on the Android side (minSdk 26 ≈ same era) and well
   # above WKURLSchemeHandler's iOS 11 requirement.
   deploymentTarget:
@@ -33,4 +33,4 @@ targets:
         # Simulator builds need no team or signing identity — this keeps the
         # spike runnable without an Apple Developer account.
         CODE_SIGNING_ALLOWED: NO
-        PRODUCT_BUNDLE_IDENTIFIER: com.euspell.EupubOriginSpike
+        PRODUCT_BUNDLE_IDENTIFIER: org.euspell.eupuboriginspike

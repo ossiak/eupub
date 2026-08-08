@@ -16,11 +16,11 @@ val keystoreProperties = Properties().apply {
 val hasReleaseKeystore = keystoreProperties.containsKey("storeFile")
 
 android {
-    namespace = "com.euspell.eupub"
+    namespace = "org.euspell.eupub"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.euspell.eupub"
+        applicationId = "org.euspell.eupub"
         minSdk = 26
         targetSdk = 34
         versionCode = 1
