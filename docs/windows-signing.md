@@ -84,10 +84,33 @@ want to sign a build by hand):
 }
 ```
 
-#### `publisherName` is omitted, and is currently inert
+#### `publisherName` is required by the schema, but inert at runtime
 
-Not a TODO — there is nothing in Eupub that reads it. Its only consumer outside
-the Appx target is one line of `PublishManager`:
+Both halves matter, and they pull in opposite directions — which is how the first
+tagged Windows build failed.
+
+**It cannot be omitted.** `WindowsAzureSigningConfiguration` lists it as required
+and types it `string`, so leaving it out — or setting it to `null` — fails
+validation before the build starts:
+
+```
+configuration.win.azureSignOptions should be one of these: null
+```
+
+That message is unhelpfully indirect; it means "your object didn't match the
+schema, so the only remaining allowed value is null". The runtime *does* handle a
+null publisher (`computedPublisherName` checks for it explicitly), but validation
+runs first and you never reach that code.
+
+**It plays no part in signing.** It is destructured straight back out before the
+parameters are assembled, so the TrustedSigning module never sees it:
+
+```js
+const { publisherName: _publisher, // extract from `extraSigningArgs`
+        endpoint, certificateProfileName, codeSigningAccountName, ... } = options.options.azureSignOptions
+```
+
+Its only consumer outside the Appx target is one line of `PublishManager`:
 
 ```js
 const publisherName = winPackager.isForceCodeSigningVerification
@@ -101,11 +124,15 @@ copy. Eupub has no updater package, no `autoUpdater` in `src/`, and no
 `build.publish`; it targets `nsis`, and the NSIS target never reads the field at
 all. So it starts mattering the day auto-update is added, and not before.
 
-**When that day comes, do not guess it.** It has to be byte-identical to the
-certificate's CN — a wrong value is worse than none, because it is exactly what
-update verification compares — and electron-builder cannot read the CN back off
-the Azure service (`computedPublisherName` returns null with a TODO saying so).
-Three ways to get it, in increasing order of reliability:
+**The value in use is `Kamran Ossia`** — the subject of the `euspell-public`
+certificate profile.
+
+Because it is inert today, a wrong value here would break nothing and say
+nothing, and would then surface much later as updates failing verification. So
+it is worth confirming rather than carrying on trust. It has to be
+byte-identical to the certificate's CN, and electron-builder cannot read the CN
+back off the Azure service (`computedPublisherName` returns null with a TODO
+saying so). Three ways to check it, in increasing order of reliability:
 
 1. **Azure Portal** — the `euspell` signing account ▸ *Certificate profiles* ▸
    `euspell-public`. The subject comes from your identity validation: the
@@ -123,8 +150,9 @@ Three ways to get it, in increasing order of reliability:
    signtool verify /pa /v .\release\eupub-Setup-*.exe
    ```
 
-Since the field is inert until auto-update exists, the easy path is to ship the
-first signed release without it and read the CN off that artifact.
+Option 3 is the one to do once the first signed installer exists: it reports the
+literal string electron-builder would compare against, so it either confirms the
+value above or replaces it.
 
 Authentication is by environment variable (Azure's `EnvironmentCredential`), so
 nothing secret goes in the repo:
