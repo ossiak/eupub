@@ -24,6 +24,11 @@
 #   npm version <x.y.z>                  # edits package.json + package-lock + tag
 #   git push --follow-tags origin main   # pushes the commit AND its tag together
 #
+# package.json is the only place a version is written. The mobile builds are not
+# made here, but they read the same field: android/app/build.gradle.kts parses it
+# at configuration time, and ios/Eupub/prepare-assets.mjs writes it into
+# Version.xcconfig. So one `npm version` moves all five artefacts.
+#
 # macOS signing secrets (Settings > Secrets and variables > Actions) - all
 # optional; without them the macOS job still builds an unsigned dmg. See
 # docs/macos-signing.md:

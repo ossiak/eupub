@@ -36,10 +36,20 @@ targets:
       # For the native SQLite lexicon (import SQLite3 in Lexicon.swift).
       - sdk: libsqlite3.tbd
       - package: ZIPFoundation
+    # Written by prepare-assets.mjs from package.json (git-ignored, derived), so
+    # the app's version tracks the desktop builds' instead of sitting at
+    # XcodeGen's 1.0 default. run.sh stages assets before generating, so it is
+    # always present; running xcodegen alone on a fresh clone needs
+    # `node prepare-assets.mjs` first.
+    configFiles:
+      Debug: Version.xcconfig
+      Release: Version.xcconfig
     info:
       path: Generated-Info.plist
       properties:
         CFBundleDisplayName: Eupub
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
         # No arbitrary loads needed — everything is served from the custom scheme.
     settings:

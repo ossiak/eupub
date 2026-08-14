@@ -4,6 +4,7 @@ Generated-Info.plist
 
 # Staged by prepare-assets.mjs (regenerate: node ios/Eupub/prepare-assets.mjs)
 www/
+Version.xcconfig
 
 # Build output
 build/

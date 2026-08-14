@@ -15,6 +15,29 @@ val keystoreProperties = Properties().apply {
 }
 val hasReleaseKeystore = keystoreProperties.containsKey("storeFile")
 
+// The version comes from Eupub's package.json, the same single source the three
+// desktop builds use (release.yml fails a tagged build when the tag disagrees
+// with it). Nothing tied the APK to it before, so versionName sat at 0.1.0 while
+// the desktop shipped 0.2.3, and the gap widened with every release.
+val pkgVersion = run {
+    val f = rootProject.file("../package.json")
+    @Suppress("UNCHECKED_CAST")
+    val pkg = groovy.json.JsonSlurper().parse(f) as Map<String, Any?>
+    pkg["version"] as? String ?: error("no \"version\" field in ${f.path}")
+}
+
+// Play requires versionCode to increase with every upload and never accepts a
+// repeat, so it is derived from the name rather than stored: major*10000 +
+// minor*100 + patch is monotonic across any bump and still readable backwards
+// (0.3.0 -> 300). A non-numeric version is a hard error — silently shipping an
+// APK whose code did not advance costs a whole upload slot.
+val pkgVersionCode = Regex("""^(\d+)\.(\d+)\.(\d+)""").find(pkgVersion)
+    ?.destructured
+    ?.let { (major, minor, patch) ->
+        major.toInt() * 10000 + minor.toInt() * 100 + patch.toInt()
+    }
+    ?: error("package.json version '$pkgVersion' is not major.minor.patch")
+
 android {
     namespace = "org.euspell.eupub"
     compileSdk = 34
@@ -23,8 +46,8 @@ android {
         applicationId = "org.euspell.eupub"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = pkgVersionCode
+        versionName = pkgVersion
     }
 
     signingConfigs {

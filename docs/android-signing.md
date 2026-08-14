@@ -213,11 +213,20 @@ re-signs your upload with a key it holds:
   `compileSdk = 34` / `targetSdk = 34`, so a Play submission needs that raised
   first (and the behaviour changes for 35 and 36 checked — mainly edge-to-edge
   display and the WebView/storage rules, both of which touch this app).
-- **`versionCode` must increase with every upload** and is currently pinned at
-  `1`, with `versionName = "0.1.0"` while [`package.json`](../package.json) says
-  `0.2.3` — and the gap widens with every desktop release, since nothing ties
-  them together. Reconcile the two before the first Play upload; deriving both
-  from `package.json` in `prepare-assets.mjs` is the tidy fix.
+- **`versionCode` must increase with every upload**, and Play never accepts a
+  repeat. Both numbers now come from [`package.json`](../package.json), which
+  `build.gradle.kts` reads at configuration time — `versionName` is the string
+  verbatim, `versionCode` is `major*10000 + minor*100 + patch` (`0.3.0` → `300`),
+  monotonic across any bump and readable backwards. So `npm version <x.y.z>`
+  moves the APK along with the three desktop builds, and there is nothing to
+  remember. Two consequences worth knowing:
+  - Sideloaded builds carry `versionCode 1` (the old hardcoded value). The jump
+    to 200-something is an upgrade, so it installs cleanly over them — but only
+    while the signing key is the same one, which the Play App Signing cutover
+    above changes anyway.
+  - Re-uploading a **fixed build of the same version** needs a new code. Bump the
+    patch (`npm version patch`) rather than hand-editing the gradle file; the
+    derivation is deliberately the only path.
 
 ## Signing in CI
 
