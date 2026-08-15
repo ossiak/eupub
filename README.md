@@ -3,7 +3,7 @@
 A standalone **EPUB and PDF reader** that renders books in **euspell** reformed
 spelling. It runs as an Electron desktop app on **Windows**, **macOS**, and **Linux**, and as native
 **Android** and **iOS** apps. Eupub reuses the euspell conversion engine **as-is** from the sibling
-[`euspell_ext`](../euspell_ext) project — the same `convert()` + `walkTextNodes()`
+[`euspell_ext`](https://github.com/ossiak/euspell) project — the same `convert()` + `walkTextNodes()`
 pair that drives the browser extension and the PDF viewer. Nothing in the engine
 is re-implemented or modified here.
 
