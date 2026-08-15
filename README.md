@@ -130,3 +130,20 @@ euspell re-renders and re-applies them. Search indexes the **original** spelling
 ```sh
 npm test          # engine+parse pipeline, viewer mechanics, reader wiring (Electron)
 ```
+
+## License
+
+GPL-3.0-or-later. Copyright (C) 2026 Kamran Ossia. The full licence text is in
+[LICENSE](LICENSE) — verbatim, so that a copy travels with every build rather
+than only being pointed at. That matters more here than in most repositories,
+because Eupub ships as installers and AppImages that a recipient may hold with
+no network.
+
+Two parts are not ours to relicense, and both ship inside every build:
+
+- **The conversion engine** comes from
+  [euspell](https://github.com/ossiak/euspell), under the same
+  GPL-3.0-or-later terms. Corresponding source for it lives there, not here.
+- **The compiled lexicon** is Creative Commons Attribution-ShareAlike 4.0
+  International ([CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)),
+  not GPL.

@@ -1,26 +1,3 @@
-Eupub — a standalone EPUB and PDF reader that renders books in euspell
-reformed spelling.
-
-Copyright (C) 2026 Kamran Ossia
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-The full text of that License follows, so that it travels with every copy
-of the program rather than only being pointed at.
-
-================================================================================
-
                     GNU GENERAL PUBLIC LICENSE
                        Version 3, 29 June 2007
 
@@ -695,15 +672,3 @@ may consider it more useful to permit linking proprietary applications with
 the library.  If this is what you want to do, use the GNU Lesser General
 Public License instead of this License.  But first, please read
 <https://www.gnu.org/licenses/why-not-lgpl.html>.
-
-================================================================================
-
-Note on the euspell lexicon data:
-Eupub bundles euspell's compiled lexicon, which is licensed under the
-Creative Commons Attribution-ShareAlike 4.0 International License
-(CC BY-SA 4.0), not the GPL. See
-https://creativecommons.org/licenses/by-sa/4.0/
-
-Note on the conversion engine:
-The euspell engine that Eupub reuses lives in a separate repository,
-https://github.com/ossiak/euspell, under the same GPL-3.0-or-later terms.
