@@ -54,11 +54,21 @@ targets:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
+        # iPhone-only, portrait: a focused single-column reader. Declaring
+        # orientations is required for App Store validation, and keeping the app
+        # off iPad (TARGETED_DEVICE_FAMILY=1 below) avoids the iPad-multitasking
+        # rule that all four orientations be supported.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
         # Expose the app's Documents folder in Files ("On My iPhone ▸ Eupub") and
         # in Finder, so books can be dropped in without a share sheet — both keys
         # are required for the folder to appear and be openable.
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
+        # Eupub uses no non-exempt encryption (no network, no custom crypto), so
+        # declare it here and App Store Connect skips the export-compliance prompt
+        # on every upload.
+        ITSAppUsesNonExemptEncryption: false
         # No arbitrary loads needed — everything is served from the custom scheme.
     settings:
       base:
@@ -67,3 +77,6 @@ targets:
         CODE_SIGNING_ALLOWED: NO
         PRODUCT_BUNDLE_IDENTIFIER: org.euspell.eupub.ios
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # iPhone only (1). The reader targets phone width and all store assets are
+        # iPhone; keeps the app off the iPad-multitasking orientation requirement.
+        TARGETED_DEVICE_FAMILY: "1"
