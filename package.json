@@ -59,6 +59,10 @@
       {
         "from": "build/icon.png",
         "to": "icon.png"
+      },
+      {
+        "from": "LICENSE",
+        "to": "LICENSE"
       }
     ],
     "win": {
