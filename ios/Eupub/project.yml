@@ -54,6 +54,11 @@ targets:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
+        # Expose the app's Documents folder in Files ("On My iPhone ▸ Eupub") and
+        # in Finder, so books can be dropped in without a share sheet — both keys
+        # are required for the folder to appear and be openable.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
         # No arbitrary loads needed — everything is served from the custom scheme.
     settings:
       base:
