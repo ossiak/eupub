@@ -8,9 +8,21 @@
 //   • Bridge reproduces window.eupub via a WKScriptMessageHandler + a promise
 //     registry settled through window.__eupubResolve (see ios-bridge.js).
 import SwiftUI
+import Foundation
 
 @main
 struct EupubApp: App {
+    init() {
+        // Ensure Documents exists so UIFileSharingEnabled surfaces it (Files "On
+        // My iPhone ▸ Eupub" and Finder) even before anything is written there.
+        // The reader keeps its own books under Application Support, so iOS would
+        // otherwise never create Documents and the drop-in location — the whole
+        // point of file sharing — wouldn't appear.
+        if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            try? FileManager.default.createDirectory(at: docs, withIntermediateDirectories: true)
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             ReaderView().ignoresSafeArea()
