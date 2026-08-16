@@ -8,9 +8,18 @@ import Foundation
 final class BookStore {
     private let lock = NSLock()
     private var dir: URL?
+    private var pdfDir: URL?
 
     var currentBookDir: URL? {
         get { lock.lock(); defer { lock.unlock() }; return dir }
         set { lock.lock(); dir = newValue; lock.unlock() }
+    }
+
+    /// The directory holding the current PDF, served at /pdf/… — the analog of
+    /// currentBookDir for the embedded PDF viewer (a PDF isn't extracted, just
+    /// copied in and served verbatim).
+    var currentPdfDir: URL? {
+        get { lock.lock(); defer { lock.unlock() }; return pdfDir }
+        set { lock.lock(); pdfDir = newValue; lock.unlock() }
     }
 }
