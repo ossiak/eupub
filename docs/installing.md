@@ -11,8 +11,9 @@ It runs as a desktop app on **Windows**, **macOS**, and **Linux**, an early
 
 ## Which download
 
-The desktop and Android builds live on the **Releases** page; **iOS is on the App
-Store** (see [iOS](#ios) below).
+The desktop builds live on the **Releases** page. Android and iOS are both
+build-it-yourself for now — neither is in a store (see [Android](#android) and
+[iOS](#ios) below).
 
 <https://github.com/ossiak/eupub/releases>
 
@@ -24,13 +25,14 @@ Open the latest release and pick the file for your platform:
 | **macOS** (Apple Silicon) | `Eupub-<version>-arm64.dmg` | Disk image |
 | **Linux** (x86-64) | `Eupub-<version>.AppImage` | Single portable binary |
 | **Android** 8.0+ | build it yourself | Sideloaded app (preview) |
-| **iOS** 17+ (iPhone & iPad) | not available yet | — |
+| **iOS** 17+ (iPhone & iPad) | build it yourself | Xcode build onto your own device |
 
 > The Linux AppImage, the macOS disk image and the Windows installer are built
 > and attached automatically for every release — those three are what a release
-> contains. **No APK is published**: the release workflow has no Android job, so
-> the preview has to be built from source (see
-> [Build it yourself](#build-it-yourself)). iOS has not been submitted anywhere.
+> contains. **Neither mobile build is published**: the release workflow has no
+> Android or iOS job, so both have to be built from source (see
+> [Build it yourself](#build-it-yourself)). iOS has not been submitted to the App
+> Store, but it does run on a real device once you have built it.
 
 ## Windows
 
@@ -116,13 +118,35 @@ Requires **Android 8.0 (Oreo) or newer**.
 
 ## iOS
 
-**Eupub is not available for iPhone or iPad yet.** The iOS port is in progress:
-it has not been submitted to the App Store, so there is nothing to search for and
-no way to install it without a developer setup of your own.
+**Eupub is not on the App Store.** It has not been submitted, so there is nothing
+to search for — but the app itself runs on a real iPhone or iPad, and reads both
+EPUB and PDF, if you build it yourself.
 
-If you have one: open `ios/Eupub/Eupub.xcodeproj` in Xcode, set a signing
-**Team**, and **Run** onto a device or simulator. That is a development build,
-not a distributable one.
+The app is a universal iPhone/iPad build and needs **iOS 17 or later**.
+
+1. Stage the assets and generate the project:
+
+   ```sh
+   node ios/Eupub/prepare-assets.mjs
+   cd ios/Eupub && xcodegen generate
+   ```
+
+2. Open `ios/Eupub/Eupub.xcodeproj` in Xcode, set a signing **Team**, and **Run**
+   onto a device or the simulator. A free Apple ID works; the resulting build is
+   a development one, not something you can pass to anyone else.
+3. `ios/Eupub/run.sh` drives the simulator instead, optionally with a device
+   name: `./run.sh "iPad Pro 13-inch (M5)"` — any from
+   `xcrun simctl list devices available`.
+
+**Getting books onto the device.** The app's Documents folder is exposed, so it
+appears as **On My iPhone ▸ Eupub** in the Files app and under the device in
+Finder. Drop `.epub` and `.pdf` files straight in there, then open them with the
+app's **Open** button (Browse ▸ On My iPhone ▸ Eupub). The document picker also
+reaches iCloud Drive and other providers.
+
+**PDFs work as they do elsewhere** — the same embedded viewer the desktop and
+Android builds use, reforming the text while keeping the page's layout, so a PDF
+opened here is converted rather than just displayed.
 
 This section will describe the App Store route once there is one. It is written
 this way deliberately — an install page that promises a store listing which does
@@ -169,7 +193,9 @@ If there's no prebuilt file for your platform, or you want to run from source:
   (`node ios/Eupub/prepare-assets.mjs && (cd ios/Eupub && xcodegen generate)`),
   open `ios/Eupub/Eupub.xcodeproj` in Xcode, set a signing **Team**, and **Run**.
   This is the only way to run Eupub on iOS today; no App Store build has been
-  submitted.
+  submitted. It reads EPUB and PDF, the latter through the same embedded viewer
+  the desktop and Android builds use, and its Documents folder is exposed so
+  books can be dropped in from Files or Finder — see [iOS](#ios).
 
 ## If something looks wrong
 
@@ -179,6 +205,7 @@ If there's no prebuilt file for your platform, or you want to run from source:
 | Linux: AppImage won't start / mount error | Install FUSE 2, or run `./Eupub-*.AppImage --appimage-extract-run`. Confirm it's executable (`chmod +x`). |
 | Android: *"App not installed"* or blocked | Allow **Install unknown apps** for the app opening the APK; in Play Protect choose **Install anyway**. Check the phone is Android 8.0+. |
 | Android: no APK in the release | There isn't one — releases carry the Linux, macOS and Windows assets only. Build the preview yourself (see [Build it yourself](#build-it-yourself)). |
-| iOS: can't find Eupub in the App Store | It is not there. The iOS port is in progress and has not been submitted, so no search or region will find it. |
+| iOS: can't find Eupub in the App Store | It is not there. The iOS port has not been submitted, so no search or region will find it. Build it yourself (see [iOS](#ios)). |
+| iOS: "On My iPhone ▸ Eupub" is missing in Files | It appears once the app has been launched at least once — the folder is created on first run. Check you are in **Browse**, not **Recents**. |
 | A book opens in original spelling | Toggle euspell **on** in the reader chrome — it's a per-book setting that re-renders the chapter. |
 | A word looks wrong | Reforms are context-sensitive and a handful of ambiguous words are left unchanged deliberately — see the reform notes in the [README](../README.md). |
