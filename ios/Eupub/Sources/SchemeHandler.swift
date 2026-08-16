@@ -52,6 +52,12 @@ final class SchemeHandler: NSObject, WKURLSchemeHandler {
                 ?? String(path.dropFirst("/book/".count))
             return within(bookDir, rel)
         }
+        if path.hasPrefix("/pdf/") {
+            guard let pdfDir = bookStore.currentPdfDir else { return nil }
+            let rel = String(path.dropFirst("/pdf/".count)).removingPercentEncoding
+                ?? String(path.dropFirst("/pdf/".count))
+            return within(pdfDir, rel)
+        }
         var rel: String
         if path.hasPrefix("/assets/") {
             rel = String(path.dropFirst("/assets/".count))
@@ -92,6 +98,8 @@ final class SchemeHandler: NSObject, WKURLSchemeHandler {
         case "xhtml": return "application/xhtml+xml"
         case "css": return "text/css"
         case "js", "mjs": return "application/javascript"
+        case "wasm": return "application/wasm" // WebAssembly.instantiateStreaming rejects octet-stream
+        case "pdf": return "application/pdf"
         case "json": return "application/json"
         case "opf", "ncx", "xml": return "application/xml"
         case "jpg", "jpeg": return "image/jpeg"

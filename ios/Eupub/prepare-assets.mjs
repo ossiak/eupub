@@ -20,6 +20,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
+import { generateViewerHtml } from '../../build/pdf-viewer-html.mjs';
 
 const require = createRequire(import.meta.url);
 const HERE = path.dirname(fileURLToPath(import.meta.url)); // Eupub/ios/Eupub
@@ -30,11 +31,14 @@ const EXT = path.resolve(EUPUB, '..', 'euspell_ext');
 const ASSETS = path.join(HERE, 'www'); // bundled as a folder reference (structure preserved)
 const READER = path.join(ASSETS, 'reader');
 const ENGINE = path.join(ASSETS, 'engine');
+const PDF = path.join(ASSETS, 'pdf');
+const PDFJS = path.join(ASSETS, 'pdfjs');
 
 // Start clean so a removed source file can't linger in the bundle.
 fs.rmSync(ASSETS, { recursive: true, force: true });
 fs.mkdirSync(READER, { recursive: true });
 fs.mkdirSync(ENGINE, { recursive: true });
+fs.mkdirSync(PDF, { recursive: true });
 
 // 1. Reuse the renderer verbatim (the shared, host-agnostic half) + the iOS
 //    bridge shim (replaces the Electron preload, as android-bridge.js does).
@@ -90,6 +94,42 @@ try {
 //    real books share one extraction path (Bridge.extractEpub).
 const { makeEpub } = require(path.join(EUPUB, 'test', 'make-epub.js'));
 makeEpub(path.join(ASSETS, 'sample.epub'));
+
+// --- PDF support (mirrors android/prepare-assets.mjs steps 6–9) --------------
+
+// PDF.js runtime (worker + wasm decoders + standard fonts), served under
+// /assets/pdfjs/. The SchemeHandler serves .mjs as application/javascript and
+// .wasm as application/wasm — a module worker / instantiateStreaming reject
+// octet-stream. Copied from euspell_ext's built dist.
+const pdfjsSrc = path.join(EXT, 'dist', 'pdfjs');
+if (!fs.existsSync(path.join(pdfjsSrc, 'pdf.worker.min.mjs'))) {
+  throw new Error('euspell_ext/dist/pdfjs missing — run "npm run build:pdfjs" in euspell_ext first.');
+}
+fs.rmSync(PDFJS, { recursive: true, force: true }); // never leave a stale worker behind
+fs.cpSync(pdfjsSrc, PDFJS, { recursive: true });
+
+// The mobile PDF viewer bundle + its CSS. The bundle fetches each page's lexicon
+// subset through the bridge (window.eupub.lexiconSubset), as the engine does.
+const pdfBundle = path.join(EXT, 'dist', 'pdf-viewer.mobile.js');
+if (!fs.existsSync(pdfBundle)) {
+  throw new Error('euspell_ext/dist/pdf-viewer.mobile.js missing — run "npm run build:pdf:mobile" in euspell_ext first.');
+}
+fs.copyFileSync(pdfBundle, path.join(PDF, 'pdf-viewer.mobile.js'));
+fs.copyFileSync(path.join(EXT, 'src', 'pdf', 'viewer.css'), path.join(PDF, 'viewer.css'));
+
+// pdf/viewer.html: the extension's viewer page transformed by the shared
+// generator (header dropped, its own CSP), with ios-bridge.js as the bridge — it
+// defaults its origin to eupub://localhost, so no host-config script is needed.
+// The reader opens it in the #pdf iframe as
+// eupub://localhost/assets/pdf/viewer.html?file=<served pdf url>.
+fs.writeFileSync(
+  path.join(PDF, 'viewer.html'),
+  generateViewerHtml(EXT, ['<script src="../reader/ios-bridge.js"></script>'])
+);
+
+// A bundled sample PDF (Helvetica-only) so PDF mode is testable without a picker.
+const { makePdf } = require(path.join(EUPUB, 'test', 'make-pdf.js'));
+makePdf(path.join(ASSETS, 'sample.pdf'));
 
 // 6. Version.xcconfig, so the bundle version comes from package.json like every
 //    other build's does. project.yml is static YAML and cannot read a file, so

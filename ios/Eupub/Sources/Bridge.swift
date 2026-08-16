@@ -16,6 +16,13 @@ final class Bridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate, UIDo
     private let wwwRoot = Bundle.main.resourceURL!.appendingPathComponent("www")
     private var seeded = false
 
+    // The frame each pending call came from, so its promise is resolved in that
+    // frame's context — the embedded PDF viewer runs in an iframe and calls
+    // window.eupub.lexiconSubset itself; a main-frame evaluateJavaScript would
+    // resolve the wrong window.__eupubResolve and the call would hang. Touched
+    // only on the main thread (didReceive + resolve's main-queue block).
+    private var callFrames: [Int: WKFrameInfo] = [:]
+
     /// Where books are unzipped, in the app container (persists across launches).
     private lazy var booksDir: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -46,6 +53,7 @@ final class Bridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate, UIDo
               let method = body["method"] as? String,
               let id = body["id"] as? Int else { return }
         let args = body["args"] as? [Any] ?? []
+        callFrames[id] = message.frameInfo // resolve in the frame that called (main frame or the PDF-viewer iframe)
 
         switch method {
         case "openPath":
@@ -68,12 +76,15 @@ final class Bridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate, UIDo
     // any other value → a real file path), unzip it into the container, and
     // return the book — the same path a user-picked book takes.
     private func handleOpenPath(_ id: Int, _ path: String) {
-        let epubURL = path == "sample" ? wwwRoot.appendingPathComponent("sample.epub") : URL(fileURLWithPath: path)
-        guard FileManager.default.fileExists(atPath: epubURL.path) else {
+        let fileURL = path == "sample" ? wwwRoot.appendingPathComponent("sample.epub") : URL(fileURLWithPath: path)
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
             resolve(id, ok: true, json: "null"); return // gone — reader falls back to welcome
         }
         do {
-            resolve(id, ok: true, json: Self.jsonString(try extractEpub(epubURL, sourcePath: path)))
+            let book = fileURL.pathExtension.lowercased() == "pdf"
+                ? try importPdf(fileURL, sourcePath: path)
+                : try extractEpub(fileURL, sourcePath: path)
+            resolve(id, ok: true, json: Self.jsonString(book))
         } catch {
             resolve(id, ok: false, json: Self.errJson(String(describing: error)))
         }
@@ -99,11 +110,33 @@ final class Bridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate, UIDo
 
         let opfPath = dest.path + "/" + opfRel
         return [
+            "kind": "epub",
             "sourcePath": sourcePath,
             "rootDir": dest.path,
             "opfDir": (opfPath as NSString).deletingLastPathComponent,
             "opfPath": opfPath,
             "opfXml": opfXml,
+        ]
+    }
+
+    // A PDF isn't extracted like an EPUB — it's copied verbatim into a fresh dir
+    // and served at eupub://localhost/pdf/<name>, published to the SchemeHandler.
+    // The reader opens book.kind == "pdf" in the embedded viewer; that url is
+    // same-origin with the viewer, so it clears the viewer's ?file= scheme check
+    // (the iOS analog of MainActivity.importPdf / Android's https://eupub.local/pdf).
+    private func importPdf(_ pdfURL: URL, sourcePath: String) throws -> [String: Any] {
+        let dest = booksDir.appendingPathComponent("pdf", isDirectory: true)
+        try? FileManager.default.removeItem(at: dest)
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        let name = pdfURL.lastPathComponent
+        try FileManager.default.copyItem(at: pdfURL, to: dest.appendingPathComponent(name))
+        bookStore.currentPdfDir = dest
+        let encoded = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name
+        return [
+            "kind": "pdf",
+            "sourcePath": sourcePath,
+            "url": "eupub://localhost/pdf/\(encoded)",
+            "title": (name as NSString).deletingPathExtension,
         ]
     }
 
@@ -124,7 +157,7 @@ final class Bridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate, UIDo
     private func presentPicker(_ id: Int) {
         guard let vc = topViewController() else { resolve(id, ok: true, json: "null"); return }
         pendingPickId = id
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.epub])
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.epub, .pdf])
         picker.allowsMultipleSelection = false
         picker.delegate = self
         vc.present(picker, animated: true)
@@ -145,7 +178,10 @@ final class Bridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate, UIDo
                 let dest = library.appendingPathComponent(src.lastPathComponent)
                 try? FileManager.default.removeItem(at: dest)
                 try FileManager.default.copyItem(at: src, to: dest)
-                self.resolve(id, ok: true, json: Self.jsonString(try self.extractEpub(dest, sourcePath: dest.path)))
+                let book = dest.pathExtension.lowercased() == "pdf"
+                    ? try self.importPdf(dest, sourcePath: dest.path)
+                    : try self.extractEpub(dest, sourcePath: dest.path)
+                self.resolve(id, ok: true, json: Self.jsonString(book))
             } catch {
                 self.resolve(id, ok: false, json: Self.errJson(String(describing: error)))
             }
@@ -165,7 +201,12 @@ final class Bridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate, UIDo
     // --- settle a pending JS promise -----------------------------------------
     private func resolve(_ id: Int, ok: Bool, json: String) {
         let js = "window.__eupubResolve(\(id), \(ok), \(Self.jsLiteral(json)));"
-        DispatchQueue.main.async { self.webView?.evaluateJavaScript(js, completionHandler: nil) }
+        DispatchQueue.main.async {
+            // Resolve in the calling frame (nil ⇒ main frame) — the PDF viewer's
+            // iframe defines its own window.__eupubResolve.
+            let frame = self.callFrames.removeValue(forKey: id)
+            self.webView?.evaluateJavaScript(js, in: frame, in: .page, completionHandler: nil)
+        }
     }
 
     // --- helpers --------------------------------------------------------------
