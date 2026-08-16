@@ -66,8 +66,16 @@ final class SchemeHandler: NSObject, WKURLSchemeHandler {
 
     /// Resolve `rel` under `root`, rejecting anything that escapes it.
     private func within(_ root: URL, _ rel: String) -> URL? {
-        let candidate = root.appendingPathComponent(rel).standardizedFileURL
-        guard candidate.path == root.path || candidate.path.hasPrefix(root.path + "/") else { return nil }
+        // Standardize the ROOT as well as the candidate. On a device,
+        // Bundle.main.resourceURL sits under /var/containers/…, but
+        // standardizedFileURL resolves the /var → /private/var symlink — so a
+        // standardized candidate (/private/var/…) never has the raw root
+        // (/var/…) as a prefix, the guard rejected it, and EVERY resource 404'd
+        // (blank reader). The Simulator's bundle path has no such symlink, so it
+        // only broke on hardware. Canonicalize both sides before comparing.
+        let base = root.standardizedFileURL
+        let candidate = base.appendingPathComponent(rel).standardizedFileURL
+        guard candidate.path == base.path || candidate.path.hasPrefix(base.path + "/") else { return nil }
         return candidate
     }
 

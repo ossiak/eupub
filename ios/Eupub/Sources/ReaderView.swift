@@ -35,6 +35,9 @@ struct ReaderView: UIViewRepresentable {
         config.userContentController = controller
 
         let webView = WKWebView(frame: .zero, configuration: config)
+        #if DEBUG
+        webView.isInspectable = true // Safari Web Inspector for dev builds only
+        #endif
         webView.navigationDelegate = context.coordinator
         context.coordinator.webView = webView
 

@@ -38,7 +38,7 @@ fs.mkdirSync(ENGINE, { recursive: true });
 
 // 1. Reuse the renderer verbatim (the shared, host-agnostic half) + the iOS
 //    bridge shim (replaces the Electron preload, as android-bridge.js does).
-for (const f of ['reader.js', 'epub.js', 'viewer-runtime.js', 'reader.css', 'ios-bridge.js']) {
+for (const f of ['reader.js', 'epub.js', 'viewer-runtime.js', 'reader.css', 'ios-bridge.js', 'purify.js']) {
   fs.copyFileSync(path.join(RENDERER, f), path.join(READER, f));
 }
 

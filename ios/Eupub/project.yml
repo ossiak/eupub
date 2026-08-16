@@ -32,6 +32,9 @@ targets:
       # www/engine, www/book structure intact in the bundle.
       - path: www
         type: folder
+      # App icon (AppIcon.appiconset) — a single 1024² flattened from
+      # build/icon.png, since the logo SVG + sharp aren't available at build time.
+      - path: Assets.xcassets
     dependencies:
       # For the native SQLite lexicon (import SQLite3 in Lexicon.swift).
       - sdk: libsqlite3.tbd
@@ -58,3 +61,4 @@ targets:
         # an Apple Developer account (device builds set a team in Xcode later).
         CODE_SIGNING_ALLOWED: NO
         PRODUCT_BUNDLE_IDENTIFIER: org.euspell.eupub.ios
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
