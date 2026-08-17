@@ -1,0 +1,87 @@
+Eupub is an offline e-reader that displays EPUB and PDF books in "euspell", a
+reformed English spelling, and lets the reader switch between reformed and
+original spelling at any point in the text.
+
+1. DEMONSTRATION VIDEO
+A screen recording made on a physical iPhone is attached to our reply in App
+Store Connect. It begins with launching the app and shows the core loop: the
+bundled sample book opening by itself, the euspell toggle switching the same
+page between reformed and original spelling, page navigation, font size and
+light/dark, and a PDF opened through the document picker. The app has no
+account registration or login, no purchases or subscriptions, no
+user-generated content, and requests no permissions, so none of those flows
+appear.
+
+2. DEVICES AND OS VERSIONS TESTED
+[FILL IN before sending: every physical iPhone and iOS version the build was
+actually run on, plus any simulators, labelled as such.]
+
+3. WHAT THE APP DOES, AND FOR WHOM
+English spelling records history rather than pronunciation: a reader must
+already know a word in order to say it. That falls hardest on people learning
+English and on readers with reading difficulties. Euspell is a systematic
+respelling that makes the written form predictable, and Eupub is how a reader
+tries it on real books rather than on a table of rules: open a book, turn the
+reform on, and read.
+
+The audience is adult general readers - people learning English, readers with
+dyslexia or similar difficulties, and anyone curious about spelling reform.
+There is no age-restricted content of any kind; the app displays whatever book
+the user opens.
+
+Conversion is performed by a 205,000-word lexicon bundled inside the app,
+together with a classifier that resolves words whose spelling depends on
+context. Nothing about the text leaves the device.
+
+4. SETTING UP AND REACHING THE MAIN FEATURES
+No account, no login, no configuration. There are no credentials to provide
+because there is nothing to sign in to.
+
+A sample book is built in. On first launch the app opens it automatically, so
+there is content with no setup at all. The "euspell" toggle in the reader
+chrome switches that text between reformed and original spelling; this is the
+app's central feature and needs nothing but the app itself.
+
+To open your own book, tap "Open" and choose an .epub, .pdf or .txt file
+through the standard document picker (iCloud Drive and other providers are
+reachable from there). Files can also be placed in the app's Documents folder,
+which appears as "On My iPhone > Eupub" in the Files app.
+
+To exercise PDF support, open any PDF through "Open". The PDF is rendered
+normally and its text layer is reformed in place, so the page keeps its
+original layout and graphics. We are glad to supply a sample PDF at a URL if
+that would help.
+
+5. EXTERNAL SERVICES, TOOLS AND PLATFORMS
+None. The app makes no network requests and has no server, no backend, no
+analytics, no advertising and no third-party SDKs. It uses no data provider,
+authentication service, payment processor or AI service.
+
+Everything needed for conversion ships inside the app: the lexicon is a
+read-only SQLite database in the bundle, queried locally through the system
+libsqlite3. This is also why the submission declares
+ITSAppUsesNonExemptEncryption = false - there is no network traffic to protect.
+The app can be used in airplane mode from first launch onwards, which is the
+simplest way to confirm this.
+
+6. REGIONAL DIFFERENCES
+None. The app behaves identically in every region and on every storefront. It
+has no region-specific content, pricing, features or restrictions, and does not
+detect or respond to location: it requests no location permission and has no
+network access with which to infer one. The interface and the reform it
+implements are English-only, which is a property of the subject matter rather
+than a regional variation.
+
+7. REGULATED INDUSTRIES AND THIRD-PARTY MATERIAL
+The app is in no regulated industry and provides no regulated service.
+
+Eupub contains no third-party copyrighted books or texts. The bundled sample
+was written for the app. Every other book is one the user supplies from their
+own device or storage, and nothing is distributed with the app.
+
+The euspell reform, its lexicon and the reader are our own work, published as
+free software under GPL-3.0-or-later at https://github.com/ossiak/eupub and
+https://github.com/ossiak/euspell. The open-source components used are standard
+and permissively licensed: PDF.js (Apache-2.0) for PDF rendering, DOMPurify
+(Apache-2.0 / MPL-2.0) for sanitizing book markup, and ZIPFoundation (MIT) for
+reading EPUB archives. We are authorized to ship all of them.

@@ -18,9 +18,32 @@ buying nothing.
 > shows an empty reader, which is the usual cause of a genuine 2.1 on a document
 > app.
 
-Paste the answers below into **App Store Connect ▸ App Review Information ▸
-Notes**, and send them as the reply to App Review. Keep them there for every
-future submission — the rejection letter says as much.
+## Paste plain text, from the two `.txt` files beside this one
+
+**App Store Connect renders no markdown anywhere.** Pasting the drafts below as
+written would put literal `**`, `>` and `|` characters in front of a reviewer,
+which reads worse than answering plainly. Two ready-to-paste files sit beside
+this document, both pure ASCII with no markup — no smart quotes or en-dashes
+either, since those can arrive mangled:
+
+| File | Paste into | Size |
+| --- | --- | --- |
+| [`ios-app-review-reply.txt`](ios-app-review-reply.txt) | **Reply to App Review** — all seven answers, which is what the rejection asks for | 4,657 chars |
+| [`ios-app-review-notes.txt`](ios-app-review-notes.txt) | **App Review Information ▸ Notes**, where it stays for future submissions | 3,506 chars |
+
+They differ because **the Notes field caps at 4,000 characters** and the full
+reply does not fit. The Notes version drops the two answers that are about *this*
+submission rather than about the app — the video and the device list — and
+tightens the rest; nothing substantive is lost. Watch the character counter in
+App Store Connect regardless, and re-measure if you edit:
+
+```powershell
+(Get-Content docs\ios-app-review-notes.txt -Raw).Length
+```
+
+The sections below are the same answers with their reasoning, for editing
+against. **Edit the `.txt` files, not these** — these are the explanation, those
+are the artifact.
 
 ---
 
