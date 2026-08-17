@@ -6,11 +6,10 @@ original spelling at any point in the text.
 A screen recording made on a physical iPhone is attached to our reply in App
 Store Connect. It begins with launching the app and shows the core loop: the
 bundled sample book opening by itself, the euspell toggle switching the same
-page between reformed and original spelling, page navigation, font size and
-light/dark, and a PDF opened through the document picker. The app has no
-account registration or login, no purchases or subscriptions, no
-user-generated content, and requests no permissions, so none of those flows
-appear.
+page between reformed and original spelling, page navigation by swipe, and a
+PDF opened through the document picker. The app has no account registration or
+login, no purchases or subscriptions, no user-generated content, and requests
+no permissions, so none of those flows appear.
 
 2. DEVICES AND OS VERSIONS TESTED
 Tested on physical iPhone 14, iOS 26.0, simulator iPhone 17, iOS 26.5
