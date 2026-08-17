@@ -62,7 +62,7 @@ enumerate apply; the recording is short and only has to show the core loop.
 | 4 | Page forward and back — swipe, then tap the side thirds | Core navigation |
 | 5 | Font size, and light/dark | The rest of the reader chrome |
 | 6 | Bookmarks / highlights / search in the side tabs | Secondary features, briefly |
-| 7 | **Open ▸** pick a PDF, and toggle euspell again on the PDF | The one feature needing a file (see §4) |
+| 7 | **Open ▸** pick a PDF, and page through it | The one feature needing a file (see §4). **Do not tap the euspell toggle here** — it is disabled in PDF mode (`reader.js`, `loadPdf`), because a PDF is reformed once in the viewer at load. Tapping a dead control on camera invites the reviewer to try it too |
 | 8 | Airplane mode on, and the app carrying on unchanged | Optional, and worth a few seconds: it demonstrates the claim in §5 rather than asserting it |
 
 Two or three minutes is ample. Do not speed it up, and let each spelling toggle
@@ -173,6 +173,36 @@ sit long enough to read.
 > authorized to ship all of them.
 
 ---
+
+## Two known issues, and why neither blocks a resubmission
+
+Found on device on 17 August, after the rejection. Recorded here because the
+question they raise — resubmit now or fix first — is worth answering once.
+
+**The euspell toggle does nothing on a PDF.** By design, not a fault:
+`loadPdf()` in [`reader.js`](../src/renderer/reader.js) sets
+`els.euspell.disabled = true`, because a PDF is reformed once inside the viewer
+at load and the toggle was never wired through to it. Desktop and Android behave
+identically. What makes it read as a bug is that the control is left *checked*
+as well as disabled, so it looks stuck rather than inapplicable. A reviewer will
+not care unless the video invites them to press it — hence the warning in row 7
+above.
+
+**A rotated display does not re-fit the width.** The chapter runtime handles
+this (`viewer-runtime.js` has a debounced `resize` listener); the PDF viewer does
+not. `scaleFor()` fits pages to the container width at render time only, and the
+canvases carry inline dimensions, so a document laid out at one width keeps it.
+The browser extension shares the limitation — resizing a desktop window does the
+same.
+
+**On iOS this should be unreachable.** The app is locked to portrait and to
+iPhone (`UISupportedInterfaceOrientations`, `TARGETED_DEVICE_FAMILY = 1`, added
+in `3c610a1` for the App Store validation failure). If a build rotates, it
+predates that commit — check that before treating rotation as a live defect.
+
+Neither is a crash, a broken feature, or something a reviewer can stumble into
+on a portrait-locked build, so neither is a reason to hold the reply. Fix them
+because they are worth fixing, on their own schedule.
 
 ## Before resubmitting
 
