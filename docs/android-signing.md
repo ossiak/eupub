@@ -141,9 +141,19 @@ Output: `android/app/build/outputs/apk/release/app-release.apk`. Rename it to
 `eupub-<version>.apk` to match what [installing.md](installing.md) tells users to
 download.
 
-Gradle applies **v1 + v2 + v3** signature schemes by default for this `minSdk`,
-which is what you want: v2/v3 are whole-file signatures (fast, tamper-evident),
-v1 is the old jar signing that Android 8 still consults.
+Gradle applies **v2 only** for this `minSdk`, which was measured on the first
+real signed build (16 August 2026) rather than assumed. That is correct, not a
+misconfiguration: v2 arrived in Android 7.0 (API 24) and `minSdk` here is 26, so
+every device that can install Eupub at all verifies v2. v1 is the old jar
+signing, needed only below API 24, and AGP drops it precisely because nothing in
+range needs it.
+
+> **v3 is also off, and that one is a choice worth making deliberately.** v3
+> carries the *signing lineage* that key rotation depends on, so an APK signed
+> without it can never be rotated to a new key later — and rotation is already
+> weak (only Android 9+ honours it). Adding `enableV3Signing = true` to the
+> release `signingConfig` costs nothing and keeps the option open. Nothing
+> installed so far depends on it either way.
 
 ## Step 5 — Verify
 
@@ -154,20 +164,33 @@ v1 is the old jar signing that Android 8 still consults.
     app\build\outputs\apk\release\app-release.apk
 ```
 
-Look for:
+What a correct build actually prints — the `false` lines are expected, for the
+reasons above:
 
 ```text
 Verifies
-Verified using v1 scheme (JAR signing): true
+Verified using v1 scheme (JAR signing): false
 Verified using v2 scheme (APK Signature Scheme v2): true
-Verified using v3 scheme (APK Signature Scheme v3): true
+Verified using v3 scheme (APK Signature Scheme v3): false
 Signer #1 certificate DN: CN=Kamran Ossia, O=Euspell, C=GB
-Signer #1 certificate SHA-256 digest: 3f7a…
+Signer #1 certificate SHA-256 digest: 1a36d06e…
 ```
 
-**Record that SHA-256 digest.** It is the app's identity — publish it next to the
-download so anyone can confirm an APK really came from you, and check it before
-every release to catch a build that accidentally used the debug key.
+**The line that matters is the first one.** `Verifies` on its own is the verdict;
+the scheme list says which mechanisms were used, not whether the signature is
+good. Do not "fix" a `false` by forcing v1 back on — it adds a second signature
+that no supported device will ever read.
+
+**The key's SHA-256 fingerprint, recorded 16 August 2026:**
+
+```text
+1a:36:d0:6e:7e:56:87:e4:6c:cf:cb:59:61:3f:e2:ea:
+8b:c1:c6:fa:59:38:7a:2f:69:77:ac:e6:76:16:2e:b4
+```
+
+Publish it beside the download so anyone can confirm an APK came from you, and
+check it before every release — a build that quietly fell back to the debug key
+prints a different fingerprint and nothing else complains.
 
 Then install onto a real device over the top of the previous release
 (`adb install -r eupub-<version>.apk`). Success proves key continuity; an
