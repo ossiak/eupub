@@ -89,7 +89,7 @@ built with Gradle; it wraps the same engine and PDF viewer for a WebView host.
 Release builds need a self-generated signing key — see
 [docs/android-signing.md](docs/android-signing.md) — and
 [docs/android-play-submission.md](docs/android-play-submission.md) covers what a
-Google Play listing additionally requires.
+Google Play listing additionally requires, and what the alternatives to one cost.
 
 ## Build an unpacked folder (for quick local testing)
 

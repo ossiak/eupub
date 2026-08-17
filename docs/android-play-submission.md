@@ -3,6 +3,8 @@
 What remains between the Android app as it stands and a listing on Google Play.
 Signing keys are covered separately in [android-signing.md](android-signing.md),
 which this assumes you have read; that document ends where this one begins.
+**A Play listing is not the only way to ship an Android app, and may not be the
+right one — §10 sets out the alternatives and what each costs.**
 
 Everything below was checked against the repository and against Google's own
 documentation on **16 August 2026**. Two of the dates move, so re-read §3 and §6
@@ -178,7 +180,125 @@ repository secrets and the base64 keystore trick. Add it beside `appimage`,
 builds. Note it needs the same sibling `euspell_ext` checkout the desktop jobs
 use.
 
+## 10. Alternatives to listing
+
+Play is one distribution channel among several, and its gates — §3's API deadline
+and §6's three weeks — are the price of that channel specifically. None of the
+alternatives below charges either.
+
+**The decision underneath all of them is which key signs the app users install.**
+Yours, Google's, or F-Droid's. Android refuses to update across a key change, so
+moving between them later forces every user to uninstall and lose their library,
+bookmarks and reading positions. That is why §1 matters more than it looks: the
+choice is nearly free today and expensive the moment an installed base exists.
+
+| Route | Signed by | Fee | Gate | Updates |
+| --- | --- | --- | --- | --- |
+| **Direct download** (§10.1) | You | — | None | Manual, or automatic via Obtainium |
+| **F-Droid** (§10.2) | F-Droid | — | Build must be self-contained; weeks of review | Automatic |
+| **Play internal testing** (§10.3) | Google | $25 | Account, API 36, a bundle | Automatic, ≤ 100 testers |
+| **Play production** (§1–§9) | Google | $25 | API 36, 12 testers × 14 days, review | Automatic |
+| **Amazon / Samsung** (§10.4) | Varies | — | Each store's own review | Automatic |
+
+### 10.1 Direct download, with real updates
+
+This is the route [installing.md](installing.md) already describes, and the only
+thing it lacks is updating. **Obtainium** supplies that: the user installs it
+once, points it at the repository, and it watches for new releases and installs
+them the way a store client would.
+
+Two prerequisites, neither of them large:
+
+1. **Releases must actually carry an APK.** None do today — `release.yml` has no
+   Android job (§9), so the APK is built and attached by hand until it does.
+2. **Name the asset consistently**, `eupub-<version>.apk`, which is what
+   installing.md already tells users to look for. Obtainium matches release
+   assets by pattern, and a name that changes shape between releases breaks the
+   match silently.
+
+For the install page, the instructions are:
+
+> Install **Obtainium** (from its own GitHub releases, or from F-Droid or
+> IzzyOnDroid). Open it, tap **Add App**, and paste
+> `https://github.com/ossiak/eupub`. Obtainium reads the Releases page, offers
+> the latest APK, and notifies you when a newer one appears.
+
+You keep your own signing key, so there is never a cutover, and updates install
+over the top exactly as they should.
+
+The costs are real but bounded: Play Protect warns on first install, and Google's
+**developer verification** for apps installed outside Play begins biting in
+September 2026 for Brazil, Indonesia, Singapore and Thailand, and globally from
+2027 — after which a certified device refuses an APK from an unregistered
+developer. There is a lighter path for hobbyist developers, but it still means
+registering an identity against this app's signing key. Paperwork, not code.
+
+### 10.2 F-Droid
+
+The natural home for this app: GPL-3-or-later, no network permission, no
+trackers, no ads, no purchases. No fee, no tester requirement, no Play API
+deadline, and the F-Droid client gives genuine automatic updates.
+
+**One blocker, and it is structural.** F-Droid's build server builds a single
+repository from source, and Eupub is not independently buildable:
+[`build/copy-lexicon.js`](../build/copy-lexicon.js) and
+[`copy-pdf-viewer.mjs`](../build/copy-pdf-viewer.mjs) both resolve
+`path.join(EUPUB, '..', 'euspell_ext')` — a **sibling** checkout — and throw if it
+is absent. A fresh clone of this repository alone cannot produce an APK.
+
+Note the shape of the fix: because the expected path is a sibling *outside* the
+repository, adding `ossiak/euspell` as a submodule is not sufficient on its own —
+a submodule lands *inside* the working tree, where neither script looks. The work
+is therefore:
+
+1. Add the engine as a submodule at a fixed in-repo path.
+2. Change both resolvers to prefer that path and **fall back** to the sibling, so
+   local development against a live `euspell_ext` checkout keeps working exactly
+   as it does now.
+3. Confirm nothing prebuilt is committed — F-Droid rejects binaries it cannot
+   rebuild. The lexicon is generated at build time, which is the right answer
+   already.
+4. Expect scrutiny of the Node step: the build needs Node and an `npm install`,
+   which F-Droid permits but examines, and pinning `package-lock.json` is what
+   makes that argument winnable.
+5. Write the metadata YAML and open a request-for-packaging and a merge request
+   against `fdroiddata`.
+
+Reckon on a day for the build work and weeks for inclusion. **F-Droid signs with
+its own key**, so it carries the same cutover cost as Play against an existing
+sideloaded base — which is another reason to choose before that base exists.
+
+### 10.3 Play internal testing, without a listing
+
+Frequently missed: the **internal testing track** takes up to 100 testers, goes
+live within minutes, and skips production review entirely. §6's twelve-testers-
+for-fourteen-days gate applies to *production access*, not to internal testing.
+
+If the goal is real users on real phones soon rather than a public listing, this
+is the fastest legitimate route. It still needs the account (§5), the API 36 work
+(§3) and a bundle (§4) — it removes the waiting, not the engineering.
+
+### 10.4 Amazon Appstore and Samsung Galaxy Store
+
+Both are real stores with their own review, no tester gate, and lower bars than
+Play. Both are also another listing to maintain, and the audiences are small —
+Amazon skews to Fire tablets, which is not this app's shape. Worth doing when
+somebody asks for it, not before.
+
+### What this comes down to
+
+Ship the signed APK on Releases with Obtainium instructions: it is available now,
+mostly documented already, and it keeps the signing key in your hands. Then
+choose Play or F-Droid **before** that APK acquires an installed base worth
+protecting.
+
+The one thing to avoid is drift — sideloading indefinitely while intending to
+list eventually pays every cost of both and banks the benefits of neither.
+
 ## The order that minimises waiting
+
+Assuming Play production is the destination. If it is not, §10 is the shorter
+route, and step 1 is still step 1.
 
 1. Create the release key (§2) — ten minutes, unblocks everything else.
 2. Register the Play Console account (§5) and start recruiting testers (§6).
