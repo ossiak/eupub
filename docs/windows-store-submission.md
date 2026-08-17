@@ -188,15 +188,37 @@ Recorded honestly rather than guessed, because the requirements pages have moved
   exit-code behaviour. That `/S` works is settled (§5); what the Store *demands*
   is not, because the official wording was not locatable at the URLs the older
   documentation used.
-- **How install success is detected** by the Store for an unpackaged app, and
-  whether anything beyond a zero exit code is required.
 - **That a silent run completes correctly** end to end — shortcuts, file
   associations, exit code — which needs one run in a disposable VM (§5).
 - **Certification time** for a first unpackaged submission.
-- **Whether Microsoft hosts the installer** or links to a developer-hosted URL.
-  The package-management documentation describes packages being uploaded to and
-  managed in Partner Center, which implies Microsoft hosts them, but that was not
-  stated outright on the pages read.
+## Answered by the submission form itself
+
+Two of the open questions were settled by Partner Center on 17 August 2026, in
+the course of an actual submission, and both are worth recording because the
+documentation did not say either plainly.
+
+**Microsoft does not host the installer.** The form asks for a **package URL**,
+which the Store fetches at install time. Eupub's is the GitHub release asset:
+
+```text
+https://github.com/ossiak/eupub/releases/download/v0.3.1/eupub-Setup-0.3.1.exe
+```
+
+Use the versioned URL rather than `/releases/latest/download/`, because the Store
+is pinning *this* package. Two consequences follow. That URL has to keep working
+— deleting or re-tagging the release breaks installation for everyone the Store
+sends there, at install time rather than at submission time. And Microsoft never
+holds the binary, so what a Store user installs is byte-identical to the public
+download, under our own certificate, which is what makes §1's reversal argument
+hold in practice as well as in principle.
+
+**Install success is judged by the exit code**, and the form asks for a URL
+documenting any return codes not enumerated in it. There is no vendor page
+describing this installer's codes, so
+[windows-installer-exit-codes.md](windows-installer-exit-codes.md) is that page:
+`0` is success, `2` means the previous version's uninstaller failed during an
+upgrade, `0x666666` means elevation was refused, and anything else is a failure.
+Those were read from the NSIS templates rather than observed.
 
 Check these against Partner Center's own submission checklist when the account
 exists — it is authoritative and current in a way that documentation links are
