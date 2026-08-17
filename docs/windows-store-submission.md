@@ -153,25 +153,23 @@ to hold.
 The data and privacy answers are as easy here as they were for Apple and Google:
 no account, no server, no telemetry, no network.
 
-### The first-run problem, which the notes exist to solve
+### The first-run problem — fixed in the app, not papered over
 
-**The desktop app does not open a book by itself.** It shows a welcome screen
-with an "Open a book…" button, and nothing further happens until the tester
-supplies a file. The mobile builds seed a bundled sample on first launch
-(`Bridge.swift` on iOS, `maybeSeedSample` on Android); the Electron app has no
-equivalent.
+Until 0.3.1 the desktop app opened on a welcome screen and did nothing further
+until the tester supplied a file. Both mobile builds had always seeded a bundled
+sample on first launch (`Bridge.swift` on iOS, `maybeSeedSample` on Android); the
+Electron app had no equivalent. A certification tester who launches an app, finds
+no content and moves on is entitled to record that it does not demonstrably do
+anything — a likelier failure here than any policy question.
 
-A certification tester who launches Eupub, sees a welcome screen, finds no
-content and moves on has every reason to record that the app does not
-demonstrably do anything. That is a far likelier failure here than any policy
-question, and it is why the certification notes open by saying the app needs a
-book, and name a public-domain EPUB to fetch.
+**0.3.1 seeds the sample on desktop too**, so all three platforms open the same
+book immediately. The certification notes were rewritten to match: they now say
+the app needs no setup, rather than explaining how to work around it.
 
-> **Worth fixing in the app, not just papering over in the notes.** Seeding a
-> sample on desktop the way both mobile builds do would remove the failure mode
-> rather than explain it, and would improve the first five seconds for every real
-> user as well. It is the same reason the iOS submission was never at risk of a
-> genuine 2.1 on this point.
+> **Submit 0.3.1 or later, never 0.3.0.** The 0.3.0 installer is the version with
+> the empty first run, and it is still on the Releases page. Uploading it would
+> put the worst first impression of the app in front of a tester *and* contradict
+> the notes, which is the sort of small inconsistency that costs a round trip.
 
 ## 7. Updates
 

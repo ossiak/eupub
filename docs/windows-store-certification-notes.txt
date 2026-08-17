@@ -2,15 +2,15 @@ Eupub is an offline reader that displays EPUB, PDF and plain-text books in
 "euspell", a reformed English spelling, and lets the reader switch between
 reformed and original spelling while reading.
 
-HOW TO TEST IT - PLEASE READ, THE APP NEEDS A BOOK
-Eupub opens on a welcome screen with an "Open a book..." button. This is by
-design, not an error: it is a reader, and it has no content of its own until you
-give it a file. Nothing else will happen until a book is opened.
+HOW TO TEST IT
+Nothing needs to be set up. On first launch Eupub opens a short sample book that
+ships inside the app, so the reader has content immediately and the main feature
+can be tried straight away.
 
-Any EPUB or PDF file on the test machine will do. If one is not to hand, a
+To test with your own material, use the "Open" button in the toolbar and select
+any EPUB, PDF or plain-text file on the machine. If one is not to hand, a
 public-domain EPUB can be downloaded from Project Gutenberg, for example
 https://www.gutenberg.org/ebooks/1342 ("Pride and Prejudice", EPUB edition).
-Save it, then use "Open a book..." and select it.
 
 THE FEATURE TO LOOK AT
 Once a book is open, the "euspell" checkbox in the toolbar switches the text

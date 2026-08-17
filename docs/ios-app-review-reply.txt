@@ -13,7 +13,7 @@ user-generated content, and requests no permissions, so none of those flows
 appear.
 
 2. DEVICES AND OS VERSIONS TESTED
-Tested on physical iPhone 14, iOS 26.0, simulator iPhone 17, iOS 26.5
+Tested on physical iPhone 14, iOS 26.0 and simulator iPhone 17, iOS 26.5
 
 3. WHAT THE APP DOES, AND FOR WHOM
 English spelling records history rather than pronunciation: a reader must
