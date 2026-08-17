@@ -142,7 +142,7 @@ to hold.
 | --- | --- |
 | Name | Eupub (reserve in §4) |
 | Description | Reuse the App Store and Chrome Web Store copy |
-| Screenshots | Windows-sized captures. Reuse nothing from the mobile stores — the desktop reader is a different shape, and a screenshot only earns its place if reformed spelling is legible |
+| Screenshots | **None exist.** Every screenshot in the project is of the browser extension, shot for the Chrome Web Store; there is not one of the Eupub desktop app. They have to be captured from the running reader, and a screenshot only earns its place if the reformed spelling is legible in it |
 | Logo / tile art | From `build/icon.ico` and the press logo pair |
 | Category | Books & reference |
 | Age rating | Completed through the **IARC** questionnaire. No user-generated content, no ads, no purchases, no data collection — the answers are all trivial |
