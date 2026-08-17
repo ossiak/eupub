@@ -148,9 +148,30 @@ to hold.
 | Age rating | Completed through the **IARC** questionnaire. No user-generated content, no ads, no purchases, no data collection — the answers are all trivial |
 | Privacy policy URL | **Required**, and the one external dependency: it needs the site deployed, or that page served |
 | Support contact | `kamran@euspell.org` |
+| Notes for certification | Written — paste [`windows-store-certification-notes.txt`](windows-store-certification-notes.txt) verbatim (3,036 chars, plain ASCII). See below for why it opens the way it does |
 
 The data and privacy answers are as easy here as they were for Apple and Google:
 no account, no server, no telemetry, no network.
+
+### The first-run problem, which the notes exist to solve
+
+**The desktop app does not open a book by itself.** It shows a welcome screen
+with an "Open a book…" button, and nothing further happens until the tester
+supplies a file. The mobile builds seed a bundled sample on first launch
+(`Bridge.swift` on iOS, `maybeSeedSample` on Android); the Electron app has no
+equivalent.
+
+A certification tester who launches Eupub, sees a welcome screen, finds no
+content and moves on has every reason to record that the app does not
+demonstrably do anything. That is a far likelier failure here than any policy
+question, and it is why the certification notes open by saying the app needs a
+book, and name a public-domain EPUB to fetch.
+
+> **Worth fixing in the app, not just papering over in the notes.** Seeding a
+> sample on desktop the way both mobile builds do would remove the failure mode
+> rather than explain it, and would improve the first five seconds for every real
+> user as well. It is the same reason the iOS submission was never at risk of a
+> genuine 2.1 on this point.
 
 ## 7. Updates
 
