@@ -17,6 +17,26 @@ Any other non-zero value comes from NSIS itself rather than from Eupub, and
 arises from the installation being cancelled or from a file-system or
 permissions error. Treat all of them as a failed installation.
 
+## The standard outcome categories
+
+Store submissions offer a fixed list of outcomes to map return codes onto. Eupub
+emits a distinct code for none of them, so none should be mapped — a value
+supplied here would make the installer report a cause that is not the real one.
+
+| Outcome | Eupub |
+| --- | --- |
+| **Cancelled by the user** | No distinct code. It also cannot arise during an unattended install: `/S` presents no cancel button, and the one prompt that could appear — the application is running and must be closed — answers itself with OK under `/SD IDOK` and proceeds |
+| **Application already exists** | Not an error condition. Installing over an existing copy is an in-place upgrade and returns `0`. The installer never refuses because the app is present |
+| **Installation already in progress** | The installer does hold a named mutex and a second instance stops rather than running concurrently, but it exits without setting a distinct code, so there is nothing to map |
+| **Disk space is full** | No distinct code; it surfaces as a generic failure |
+| **Reboot required** | **Never happens.** No driver, no service, no in-use system file is touched, and the installer never sets a reboot flag. Nothing should be mapped here, and a restart is never requested |
+| **Network failure** | Not applicable. The installer makes no network requests of any kind |
+| **Package rejected by device security policy** | Not applicable. That decision is the operating system's, and the installer is not run to report it |
+
+The practical consequence is the rule at the top of this page: map `0` to
+success, and treat every other value as a failure whose cause is not
+distinguishable from the exit code alone.
+
 ## Notes
 
 - **Nothing here requires administrator rights.** Eupub installs per-user, into
