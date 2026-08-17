@@ -4,3 +4,6 @@ out/
 *.log
 release/
 .DS_Store
+
+# Store screenshots — derived, regenerate with build/capture-store-shots.js
+build/store-shots/
