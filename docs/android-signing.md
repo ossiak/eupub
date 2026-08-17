@@ -141,19 +141,19 @@ Output: `android/app/build/outputs/apk/release/app-release.apk`. Rename it to
 `eupub-<version>.apk` to match what [installing.md](installing.md) tells users to
 download.
 
-Gradle applies **v2 only** for this `minSdk`, which was measured on the first
-real signed build (16 August 2026) rather than assumed. That is correct, not a
-misconfiguration: v2 arrived in Android 7.0 (API 24) and `minSdk` here is 26, so
-every device that can install Eupub at all verifies v2. v1 is the old jar
-signing, needed only below API 24, and AGP drops it precisely because nothing in
-range needs it.
+Gradle applies **v2 + v3** here — v2 by AGP's default for this `minSdk`, v3
+because the release `signingConfig` asks for it explicitly. **v1 is off, and that
+is correct**: v1 is the old jar signing, needed only below API 24, and `minSdk`
+here is 26, so nothing that can install Eupub would ever read it. AGP drops it
+for exactly that reason.
 
-> **v3 is also off, and that one is a choice worth making deliberately.** v3
-> carries the *signing lineage* that key rotation depends on, so an APK signed
-> without it can never be rotated to a new key later — and rotation is already
-> weak (only Android 9+ honours it). Adding `enableV3Signing = true` to the
-> release `signingConfig` costs nothing and keeps the option open. Nothing
-> installed so far depends on it either way.
+> **v3 is requested rather than defaulted, and the comment in
+> [`build.gradle.kts`](../android/app/build.gradle.kts) says why.** AGP left it
+> off; v3 carries the signing lineage that key rotation depends on, and it cannot
+> be added to an APK after the fact, so an install signed without it could never
+> be rotated to a new key. It was turned on (16 August 2026) while nothing was
+> published and the answer was still free. Rotation is honoured only on Android
+> 9+ even so — this buys an option, not a guarantee.
 
 ## Step 5 — Verify
 
@@ -164,14 +164,14 @@ range needs it.
     app\build\outputs\apk\release\app-release.apk
 ```
 
-What a correct build actually prints — the `false` lines are expected, for the
+What a correct build actually prints — the `false` on v1 is expected, for the
 reasons above:
 
 ```text
 Verifies
 Verified using v1 scheme (JAR signing): false
 Verified using v2 scheme (APK Signature Scheme v2): true
-Verified using v3 scheme (APK Signature Scheme v3): false
+Verified using v3 scheme (APK Signature Scheme v3): true
 Signer #1 certificate DN: CN=Kamran Ossia, O=Euspell, C=GB
 Signer #1 certificate SHA-256 digest: 1a36d06e…
 ```

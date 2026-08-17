@@ -59,6 +59,15 @@ android {
                 storePassword = keystoreProperties.getProperty("storePassword")
                 keyAlias = keystoreProperties.getProperty("keyAlias")
                 keyPassword = keystoreProperties.getProperty("keyPassword")
+                // AGP's defaults for minSdk 26 sign with v2 alone: v1 is dropped
+                // because nothing above API 24 reads it, which is right, and v3
+                // is off, which is not. v3 carries the signing lineage that key
+                // rotation needs, and it cannot be added to an apk after the
+                // fact — an install signed without it can never be rotated to a
+                // new key. Asked for explicitly while nothing is published yet
+                // and the answer is still free. Rotation only works on Android
+                // 9+ even then, so this buys an option, not a guarantee.
+                enableV3Signing = true
             }
         }
     }

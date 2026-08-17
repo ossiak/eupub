@@ -7,13 +7,13 @@ happens locally. This page is for people installing a released build. To build i
 from source instead, see the [README](../README.md).
 
 It runs as a desktop app on **Windows**, **macOS**, and **Linux**, an early
-**Android** app, and an **iOS** app for iPhone and iPad.
+**Android** app, and an **iOS** app for iPhone.
 
 ## Which download
 
-The desktop builds live on the **Releases** page. Android and iOS are both
-build-it-yourself for now — neither is in a store (see [Android](#android) and
-[iOS](#ios) below).
+The desktop and Android builds live on the **Releases** page. Neither is in a
+store: Android is downloaded and installed directly (see [Android](#android)),
+and iOS is build-it-yourself (see [iOS](#ios)).
 
 <https://github.com/ossiak/eupub/releases>
 
@@ -24,14 +24,14 @@ Open the latest release and pick the file for your platform:
 | **Windows** 10 / 11 (64-bit) | `eupub-Setup-<version>.exe` | Installer |
 | **macOS** (Apple Silicon) | `Eupub-<version>-arm64.dmg` | Disk image |
 | **Linux** (x86-64) | `Eupub-<version>.AppImage` | Single portable binary |
-| **Android** 8.0+ | build it yourself | Sideloaded app (preview) |
-| **iOS** 17+ (iPhone & iPad) | build it yourself | Xcode build onto your own device |
+| **Android** 8.0+ | `eupub-<version>.apk` | Signed app, installed directly (preview) |
+| **iOS** 17+ (iPhone) | build it yourself | Xcode build onto your own device |
 
-> The Linux AppImage, the macOS disk image and the Windows installer are built
-> and attached automatically for every release — those three are what a release
-> contains. **Neither mobile build is published**: the release workflow has no
-> Android or iOS job, so both have to be built from source (see
-> [Build it yourself](#build-it-yourself)). iOS has not been submitted to the App
+> The Linux AppImage, the macOS disk image, the Windows installer and the Android
+> APK are built and attached automatically for every release — those four are
+> what a release contains. **iOS is the exception**: the release workflow has no
+> iOS job, so it has to be built from source (see
+> [Build it yourself](#build-it-yourself)). It has not been submitted to the App
 > Store, but it does run on a real device once you have built it.
 
 ## Windows
@@ -93,36 +93,54 @@ also runs on GNOME and other desktops.
 
 ## Android
 
-Android is an **early preview**: it is not on the Google Play Store, and it is
-not release-signed. Expect rough edges, and update it by installing a newer APK
-by hand.
+Android is an **early preview**, and it is **not on the Google Play Store** — the
+APK is downloaded from the Releases page and installed directly. It is properly
+release-signed, so it installs and updates like any other app; expect rough edges
+in the reader itself rather than in the install.
 
-> **No APK is published.** The release workflow builds only the Linux, macOS and
-> Windows assets, so no GitHub Release carries an `.apk` — you have to build one.
-> With the Android SDK and JDK 17 installed, `./gradlew assembleDebug` in
-> `android/` produces `android/app/build/outputs/apk/debug/app-debug.apk`; see
-> [android-port.md](android-port.md). The steps below describe installing an APK
-> you have built and transferred to the phone.
+1. On the phone, open the **Releases** page and download
+   `eupub-<version>.apk`.
 
-1. Get the APK onto the phone (transfer it from the computer that built it).
-2. Open it with the **Files** app or your browser's downloads list and tap
+   <https://github.com/ossiak/eupub/releases>
+2. Open it from your browser's downloads list or the **Files** app and tap
    **Install**. The first time, Android asks you to **allow installing unknown
    apps** for whichever app is opening the APK — grant it, then continue.
    *(Settings path: **Apps ▸ Special app access ▸ Install unknown apps**.)*
 3. Play Protect may warn about an app from outside the store — choose **Install
-   anyway**.
+   anyway**. This is what Android says about any app not distributed by Google;
+   it is not a finding about this one.
 4. Open Eupub and pick a book with the **Open** button; it uses the system file
    picker, so books in your Downloads, Drive, or other storage all work.
 
 Requires **Android 8.0 (Oreo) or newer**.
 
+**Updating.** Newer versions install straight over the top — the signing key
+never changes, so your library, bookmarks and reading positions survive. To be
+told when there is one, use **[Obtainium](https://github.com/ImranR98/Obtainium)**:
+tap **Add App** and paste `https://github.com/ossiak/eupub`. It watches the
+Releases page and installs updates the way a store client would. Without it,
+check the Releases page yourself.
+
+**Confirming an APK is genuinely ours.** Every release is signed with the same
+key, whose SHA-256 fingerprint is
+
+```text
+1a:36:d0:6e:7e:56:87:e4:6c:cf:cb:59:61:3f:e2:ea:
+8b:c1:c6:fa:59:38:7a:2f:69:77:ac:e6:76:16:2e:b4
+```
+
+Nobody needs to check this to install the app; it is here so that anyone who
+wants to can.
+
 ## iOS
 
 **Eupub is not on the App Store.** It has not been submitted, so there is nothing
-to search for — but the app itself runs on a real iPhone or iPad, and reads both
-EPUB and PDF, if you build it yourself.
+to search for — but the app itself runs on a real iPhone, and reads both EPUB and
+PDF, if you build it yourself.
 
-The app is a universal iPhone/iPad build and needs **iOS 17 or later**.
+It is an **iPhone** app, portrait only, and needs **iOS 17 or later**. iPad was
+dropped deliberately: the reader targets phone width, and an iPad build would
+have to support all four orientations to satisfy App Store validation.
 
 1. Stage the assets and generate the project:
 
@@ -135,7 +153,7 @@ The app is a universal iPhone/iPad build and needs **iOS 17 or later**.
    onto a device or the simulator. A free Apple ID works; the resulting build is
    a development one, not something you can pass to anyone else.
 3. `ios/Eupub/run.sh` drives the simulator instead, optionally with a device
-   name: `./run.sh "iPad Pro 13-inch (M5)"` — any from
+   name: `./run.sh "iPhone 17 Pro"` — any iPhone from
    `xcrun simctl list devices available`.
 
 **Getting books onto the device.** The app's Documents folder is exposed, so it
@@ -180,16 +198,19 @@ If there's no prebuilt file for your platform, or you want to run from source:
   `release/Eupub-<version>-arm64.dmg`. dmg building is macOS-only. To ship it
   **signed and notarized** so it opens with no Gatekeeper prompt, follow
   [macos-signing.md](macos-signing.md).
-- **Android** — the native project lives under [`android/`](../android/); build
-  the APK with Gradle (`./gradlew assembleDebug`). Its port design is documented
-  in [android-port.md](android-port.md).
+- **Android** — the native project lives under [`android/`](../android/). Stage
+  the assets and build with Gradle: `node android/prepare-assets.mjs`, then
+  `./gradlew assembleDebug` in `android/`. A build of your own is signed with
+  Gradle's throwaway debug key, so it cannot install over a release copy — see
+  [android-signing.md](android-signing.md) to build a signed one. The port design
+  is documented in [android-port.md](android-port.md).
 - **iOS** — the native app is in the repo under [`ios/Eupub/`](../ios/Eupub/). On
   a Mac with full Xcode and XcodeGen (`brew install xcodegen`), build and run it in
   the Simulator with `cd ios/Eupub && ./run.sh` — it stages the web assets,
   generates the project, builds (no signing), installs, and launches. Pass a device
-  name to choose one, e.g. `./run.sh "iPad Pro 13-inch (M5)"` (any from
-  `xcrun simctl list devices available`), iPad included, since it's a universal
-  iPhone/iPad app. For a physical device, stage and generate the project
+  name to choose one, e.g. `./run.sh "iPhone 17 Pro"` (any iPhone from
+  `xcrun simctl list devices available`) — the app is iPhone-only, so an iPad
+  simulator is not a valid target. For a physical device, stage and generate the project
   (`node ios/Eupub/prepare-assets.mjs && (cd ios/Eupub && xcodegen generate)`),
   open `ios/Eupub/Eupub.xcodeproj` in Xcode, set a signing **Team**, and **Run**.
   This is the only way to run Eupub on iOS today; no App Store build has been
@@ -204,7 +225,7 @@ If there's no prebuilt file for your platform, or you want to run from source:
 | Windows: *"Windows protected your PC"* | The installer *is* signed, but SmartScreen reputation accrues per certificate and Eupub's is new, so early downloads still see this. **More info → Run anyway**. Worth checking the UAC prompt names *Kamran Ossia* as publisher — *Unknown publisher* means an unofficial or self-built copy. |
 | Linux: AppImage won't start / mount error | Install FUSE 2, or run `./Eupub-*.AppImage --appimage-extract-run`. Confirm it's executable (`chmod +x`). |
 | Android: *"App not installed"* or blocked | Allow **Install unknown apps** for the app opening the APK; in Play Protect choose **Install anyway**. Check the phone is Android 8.0+. |
-| Android: no APK in the release | There isn't one — releases carry the Linux, macOS and Windows assets only. Build the preview yourself (see [Build it yourself](#build-it-yourself)). |
+| Android: the new APK won't install over the old one | You are moving between a self-built (debug-signed) copy and a released one, and Android refuses to update across a key change. Uninstall first — note that removes your library and reading positions, which live in the app. |
 | iOS: can't find Eupub in the App Store | It is not there. The iOS port has not been submitted, so no search or region will find it. Build it yourself (see [iOS](#ios)). |
 | iOS: "On My iPhone ▸ Eupub" is missing in Files | It appears once the app has been launched at least once — the folder is created on first run. Check you are in **Browse**, not **Recents**. |
 | A book opens in original spelling | Toggle euspell **on** in the reader chrome — it's a per-book setting that re-renders the chapter. |
