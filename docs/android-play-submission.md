@@ -27,7 +27,24 @@ before acting on them.
 | Play Console account | Not registered |
 | `INTERNET` permission | Absent, deliberately. This is worth more than it sounds (§7) |
 
-## 1. The decision to make before anything else
+## 1. The decision — settled: direct download
+
+> **Decided 16 August 2026: Eupub for Android ships as a signed APK from the
+> Releases page, not through Google Play.** The rest of this section is the
+> reasoning, kept because it is also what a reversal would cost.
+>
+> What follows from it: the signing key stays ours, so installs update cleanly
+> forever and there is no cutover to plan; §3's API 36 deadline and §6's
+> three-week testing gate do not apply; and §10.1 — direct download with
+> Obtainium for updates — is the live route, with §§2–9 kept as the map if the
+> decision is ever revisited.
+>
+> The one thing this decision buys that is easy to overlook: it can be reversed
+> *later at a price*, and the price only starts accruing once an APK is in
+> people's hands. Moving to Play or F-Droid after that makes every existing user
+> uninstall and lose their library and reading positions.
+
+
 
 Play App Signing re-signs your upload with a key Google holds. An app installed
 from Play is therefore signed with a **different key** from one you sideload, and
@@ -35,19 +52,13 @@ Android refuses to update across a key change: a user would have to uninstall
 first, losing their library, bookmarks and reading positions, which live in the
 WebView's `localStorage`.
 
-> **Right now that costs nothing, because no release carries an APK.** There is no
-> installed base to strand. Publish a sideloaded APK and you create one.
-
-So decide the order deliberately:
-
-- **Play first** — do not attach an APK to a release in the meantime. Cleanest,
-  and it sidesteps Google's developer-verification rollout for sideloaded apps
-  (biting in four countries from September 2026, global from 2027).
-- **Sideload first** — accept that the eventual Play release is a hard cutover,
-  and say so in the release notes rather than letting users discover it.
-
-Nothing else in this document depends on which you pick, but the cost of changing
-your mind rises the day an APK ships.
+The remaining obligation of the direct-download route is **Google's developer
+verification** for apps installed outside Play: registration is already open, the
+requirement begins in September 2026 for Brazil, Indonesia, Singapore and
+Thailand, and globally from 2027. After that a certified device refuses an APK
+from an unregistered developer. It is paperwork rather than code, there is a
+lighter path for hobbyist developers, and it is the one dated item this decision
+does not remove — so it wants a calendar entry, not a rethink.
 
 ## 2. Create the release key
 
