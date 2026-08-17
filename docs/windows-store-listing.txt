@@ -102,11 +102,45 @@ Copyright (c) 2026 Kamran Ossia. Licensed under the GNU General Public License,
 version 3 or later.
 
 ================================================================================
-ADDITIONAL LICENCE TERMS
+LICENCE TERMS
 ================================================================================
-Eupub is free software under the GNU General Public License version 3 or later.
-The full licence text is included with the application and is available at
+DO NOT accept the Standard Application License Terms for this app. Choose to
+supply your own, and paste the block below.
+
+Why: Eupub is distributed under the GNU General Public License version 3, and
+GPL section 10 forbids imposing further restrictions on the rights it grants.
+A store's standard end-user terms are exactly such restrictions, so accepting
+them would put the listing in conflict with the licence the software is under.
+Supplying the GPL itself is both correct and simpler.
+
+This is easier here than it is for most GPL apps in a store, because Microsoft
+does not host or redistribute the binary: the listing points at a package URL we
+serve, so the user receives the program from us, under our terms.
+
+--- paste from here ---
+
+Eupub is free software, licensed under the GNU General Public License, version 3
+or (at your option) any later version.
+
+You may use, study, share and modify this program under the terms of that
+licence. It is provided WITHOUT ANY WARRANTY, without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the licence for
+details.
+
+The complete licence text is installed with the application and is published at
 https://www.gnu.org/licenses/gpl-3.0.html
+
+Complete corresponding source code for this program, including the euspell
+lexicon and the conversion engine, is publicly available at
+https://github.com/ossiak/eupub and https://github.com/ossiak/euspell
+
+No additional restrictions are placed on the rights this licence grants.
+
+Eupub includes third-party components under their own permissive licences,
+compatible with the GPL: Electron and adm-zip (MIT), PDF.js and DOMPurify
+(Apache-2.0).
+
+--- to here ---
 
 ================================================================================
 SUPPORT CONTACT

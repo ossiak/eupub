@@ -153,6 +153,28 @@ to hold.
 The data and privacy answers are as easy here as they were for Apple and Google:
 no account, no server, no telemetry, no network.
 
+### Licence terms — do not accept the standard ones
+
+> **Choose "provide your own licence terms" and supply the GPL.** Eupub is
+> distributed under GPL-3.0-or-later, and **section 10 forbids imposing further
+> restrictions** on the rights the licence grants. A store's standard end-user
+> terms are exactly that, so accepting them would put the listing in conflict
+> with the licence the software is under. This is the one field on the
+> submission with legal consequences rather than presentational ones.
+
+The text to paste is in
+[windows-store-listing.txt](windows-store-listing.txt). It states the licence,
+disclaims warranty in the GPL's own terms, points at the complete corresponding
+source (§6), says outright that no further restrictions are imposed, and lists
+the permissive third-party components.
+
+This is less fraught here than for most GPL software in a store, and the reason
+is §10's package URL: **Microsoft neither hosts nor redistributes the binary**.
+The listing points at a URL we serve, so the user receives the program from us
+under our terms, and Microsoft is closer to a directory entry than a
+distributor. The app also carries its own copy of the licence — `LICENSE` is an
+`extraResource`, which is what GPL §4 requires of a binary distribution.
+
 ### The first-run problem — fixed in the app, not papered over
 
 Until 0.3.1 the desktop app opened on a welcome screen and did nothing further
@@ -191,6 +213,7 @@ Recorded honestly rather than guessed, because the requirements pages have moved
 - **That a silent run completes correctly** end to end — shortcuts, file
   associations, exit code — which needs one run in a disposable VM (§5).
 - **Certification time** for a first unpackaged submission.
+
 ## Answered by the submission form itself
 
 Two of the open questions were settled by Partner Center on 17 August 2026, in
