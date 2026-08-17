@@ -7,3 +7,4 @@ release/
 
 # Store screenshots — derived, regenerate with build/capture-store-shots.js
 build/store-shots/
+build/store-art/
