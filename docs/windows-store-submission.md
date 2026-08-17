@@ -19,7 +19,7 @@ verified](#what-is-not-yet-verified).
 | Install scope | Per-user (`perMachine: false`), so no admin elevation |
 | Architectures | **x64 only** — no `arch` is configured, so electron-builder's default applies |
 | File associations | `.epub` (see `build.win.fileAssociations`) |
-| Silent install | **Unverified** — NSIS supports `/S`, but this build has not been tested with it (§5) |
+| Silent install | **Supported** — `/S`, established from the NSIS template this installer is compiled from (§5) |
 | Partner Center account | Not registered |
 | Store listing | None |
 | Privacy policy URL | Written, not yet served — waiting on the site deploy |
@@ -98,21 +98,40 @@ to hold.
   Microsoft ID Verified chain. This is the requirement that usually costs money
   and time, and it is behind us.
 - **Silent installation.** The Store installs on the user's behalf, so the
-  installer must run unattended. electron-builder's NSIS supports `/S`, but this
-  configuration sets `oneClick: false` and `allowToChangeInstallationDirectory:
-  true`, and the combination has **not been tested**. Verify before submitting,
-  in a VM or sandbox rather than on a working machine:
+  installer must run unattended. **`/S` works with this configuration**, which
+  was the open question — `oneClick: false` and
+  `allowToChangeInstallationDirectory: true` do not prevent it.
 
-  ```powershell
-  .\eupub-Setup-0.3.0.exe /S
-  # then confirm it landed, unattended, with no prompt:
-  Test-Path "$env:LOCALAPPDATA\Programs\Eupub\Eupub.exe"
+  Established on 17 August 2026 from `app-builder-lib`'s NSIS templates rather
+  than from a trial install. Two things settle it. `SilentInstall silent` appears
+  in [`installer.nsi`](../node_modules/app-builder-lib/templates/nsis/installer.nsi)
+  only under `!ifdef BUILD_UNINSTALLER`, so the installer is an ordinary NSIS
+  one — and NSIS handles `/S` natively for any installer, suppressing its pages.
+  More directly, `installSection.nsh` carries a branch written specifically for
+  this case:
+
+  ```nsis
+  # for assisted installer run only if silent, because assisted installer has
+  # run after finish option
+  ${if} ${isForceRun}
+  ${andIf} ${Silent}
   ```
 
-  If `/S` is ignored because the assisted installer insists on its UI,
-  `oneClick: true` produces a silent installer — but it also removes the
-  install-directory choice that [installing.md](installing.md) currently
-  advertises, so that is a documentation change as well as a build one.
+  An assisted installer that had no silent path would not need that test. The
+  chain to the shipped binary holds: the lockfile pins `app-builder-lib` to
+  26.15.3, CI installs with `npm ci`, so the template read here is the one
+  compiled into `eupub-Setup-0.3.0.exe`.
+
+  In silent mode the directory page is skipped and the default is used;
+  `/D=<absolute path>` overrides it and must be the **last** argument, unquoted.
+
+  > **What this does not prove** is that a silent run completes cleanly on a real
+  > machine — exit code, shortcuts, file associations. That wants one run in a
+  > throwaway VM before submitting, not because `/S` is in doubt but because
+  > "installs unattended" and "installs correctly unattended" are different
+  > claims. Windows Sandbox is the cheapest venue; it is not enabled on the
+  > development machine (`Containers-DisposableClientVM`), and turning it on
+  > needs elevation and a reboot.
 - **Architecture.** x64 today. Windows on ARM has to run x64 under emulation,
   which works but is slower and larger in memory; adding an arm64 package is a
   separate build target and a second package upload, not a blocker.
@@ -146,11 +165,14 @@ API.
 
 Recorded honestly rather than guessed, because the requirements pages have moved:
 
-- **The precise silent-install requirement** and its expected exit-code
-  behaviour. §5 gives the test; the official wording was not locatable at the
-  URLs the older documentation used.
+- **The precise silent-install requirement** Microsoft imposes, and its expected
+  exit-code behaviour. That `/S` works is settled (§5); what the Store *demands*
+  is not, because the official wording was not locatable at the URLs the older
+  documentation used.
 - **How install success is detected** by the Store for an unpackaged app, and
   whether anything beyond a zero exit code is required.
+- **That a silent run completes correctly** end to end — shortcuts, file
+  associations, exit code — which needs one run in a disposable VM (§5).
 - **Certification time** for a first unpackaged submission.
 - **Whether Microsoft hosts the installer** or links to a developer-hosted URL.
   The package-management documentation describes packages being uploaded to and
