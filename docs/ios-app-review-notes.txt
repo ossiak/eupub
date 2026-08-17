@@ -32,6 +32,13 @@ Documents folder, which appears as "On My iPhone > Eupub" in the Files app. To
 exercise PDF support, open any PDF through "Open": it is rendered normally and
 its text layer is reformed in place, so the page keeps its original layout.
 
+One intentional difference: a PDF is always displayed in reformed spelling. The
+conversion is applied once as the document is rendered, so the "euspell" toggle
+is deliberately disabled while a PDF is open and appears greyed out. It is not
+an unresponsive control - it applies to EPUB and text books. The app is
+iPhone-only and portrait-only by design: a single-column reader sized for phone
+width.
+
 EXTERNAL SERVICES, TOOLS AND PLATFORMS
 None. The app makes no network requests and has no server, no backend, no
 analytics, no advertising and no third-party SDKs. It uses no data provider,

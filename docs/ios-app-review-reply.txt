@@ -13,8 +13,7 @@ user-generated content, and requests no permissions, so none of those flows
 appear.
 
 2. DEVICES AND OS VERSIONS TESTED
-[FILL IN before sending: every physical iPhone and iOS version the build was
-actually run on, plus any simulators, labelled as such.]
+Tested on physical iPhone 14, iOS 26.0, simulator iPhone 17, iOS 26.5
 
 3. WHAT THE APP DOES, AND FOR WHOM
 English spelling records history rather than pronunciation: a reader must
@@ -51,6 +50,16 @@ To exercise PDF support, open any PDF through "Open". The PDF is rendered
 normally and its text layer is reformed in place, so the page keeps its
 original layout and graphics. We are glad to supply a sample PDF at a URL if
 that would help.
+
+Please note one intentional difference: a PDF is always displayed in reformed
+spelling. The conversion is applied once as the document is rendered, so the
+"euspell" toggle is deliberately disabled while a PDF is open, and appears
+greyed out. It is not an unresponsive control - it applies to EPUB and text
+books, where switching back and forth is possible. We plan to extend it to PDFs
+in a later version.
+
+The app is iPhone-only and portrait-only, by design: it is a single-column
+reader sized for phone width.
 
 5. EXTERNAL SERVICES, TOOLS AND PLATFORMS
 None. The app makes no network requests and has no server, no backend, no

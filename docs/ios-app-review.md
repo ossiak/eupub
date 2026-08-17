@@ -28,8 +28,8 @@ either, since those can arrive mangled:
 
 | File | Paste into | Size |
 | --- | --- | --- |
-| [`ios-app-review-reply.txt`](ios-app-review-reply.txt) | **Reply to App Review** — all seven answers, which is what the rejection asks for | 4,657 chars |
-| [`ios-app-review-notes.txt`](ios-app-review-notes.txt) | **App Review Information ▸ Notes**, where it stays for future submissions | 3,506 chars |
+| [`ios-app-review-reply.txt`](ios-app-review-reply.txt) | **Reply to App Review** — all seven answers, which is what the rejection asks for | 5,106 chars |
+| [`ios-app-review-notes.txt`](ios-app-review-notes.txt) | **App Review Information ▸ Notes**, where it stays for future submissions | 3,905 chars |
 
 They differ because **the Notes field caps at 4,000 characters** and the full
 reply does not fit. The Notes version drops the two answers that are about *this*
@@ -203,6 +203,14 @@ predates that commit — check that before treating rotation as a live defect.
 Neither is a crash, a broken feature, or something a reviewer can stumble into
 on a portrait-locked build, so neither is a reason to hold the reply. Fix them
 because they are worth fixing, on their own schedule.
+
+**Both are declared in the reply and the notes, and that is not optional.** A
+reviewer's job is to press things. Finding a checkbox that does nothing, with no
+explanation on file, is exactly how an information rejection becomes a bug
+rejection under the same guideline — the letter's own "How to Prevent Common
+Issues" opens with 2.1 bugs and crashes. Saying beforehand that the control is
+deliberately disabled on PDFs, and why, converts a discovery into a confirmation.
+The portrait-only and iPhone-only decisions are stated for the same reason.
 
 ## Before resubmitting
 
