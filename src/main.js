@@ -237,6 +237,30 @@ ipcMain.handle('epub:openPath', (_e, filePath) => {
   return openBook(filePath);
 });
 
+// The book the reader opens on first launch, when there is no last book. Both
+// mobile builds have always bundled one and their hosts point the reader at it
+// (Bridge.swift, maybeSeedSample); the desktop had no equivalent, so a first run
+// showed the welcome screen and nothing else. Same generator, so all three
+// platforms open the identical sample.
+//
+// Resolved the way linuxWindowIcon resolves its icon: packaged builds carry it
+// in resources (build.extraResources), dev reads dist/, where build:sample
+// writes it. Returns null when it was never built — the reader then keeps the
+// welcome screen, which is exactly the old behaviour.
+ipcMain.handle('epub:samplePath', () => {
+  for (const p of [
+    path.join(process.resourcesPath || '', 'sample.epub'),
+    path.join(__dirname, '..', 'dist', 'sample.epub'),
+  ]) {
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch {
+      /* keep looking */
+    }
+  }
+  return null;
+});
+
 // Source of the bundled euspell engine, injected into each chapter iframe. This
 // is the LEXICON-EXCLUDED build (~0.36 MB): the reader supplies each chapter's
 // vocabulary subset via setLexicon (see the lexicon:subset handler), so the full

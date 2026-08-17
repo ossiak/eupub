@@ -178,6 +178,25 @@
         pruneRecent(last);
         setStatus('left', 'The last book could not be reopened — removed from recent.');
       }
+    } else if (!osOpen && window.eupub.samplePath) {
+      // Nothing to reopen, so this is a first run: open the bundled sample, the
+      // way iOS (Bridge.swift) and Android (maybeSeedSample) already do. Without
+      // it the reader sits on the welcome screen and a new user has to find a
+      // book before the app does anything at all.
+      //
+      // Runs once by construction rather than by a flag: loadBook records the
+      // sample as a recent, so the branch above reopens it from then on. Guarded
+      // on the channel because the Android bridge does not provide it — there,
+      // the host seeds the sample before this code runs.
+      try {
+        const samplePath = await window.eupub.samplePath();
+        const book = samplePath && (await window.eupub.openPath(samplePath));
+        if (book) await loadBook(book);
+      } catch (err) {
+        // An unbuilt or unreadable sample must never cost a startup: fall back
+        // to the welcome screen, which is what shipped before.
+        console.error(err);
+      }
     }
   }
 

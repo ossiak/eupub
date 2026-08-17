@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld('eupub', {
   // EPUB lifecycle.
   pickEpub: () => ipcRenderer.invoke('epub:pick'),
   openPath: (filePath) => ipcRenderer.invoke('epub:openPath', filePath),
+  // Absolute path of the bundled first-launch sample, or null if unbuilt.
+  samplePath: () => ipcRenderer.invoke('epub:samplePath'),
 
   // A book opened from outside the app (double-clicked in the file manager, or
   // passed on the command line). The callback receives the absolute path.

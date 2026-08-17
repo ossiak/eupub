@@ -14,7 +14,7 @@
     "build:lexicon": "node build/copy-lexicon.js",
     "build:pdf": "node build/copy-pdf-viewer.mjs",
     "build:purify": "node build/copy-purify.js",
-    "build": "npm run build:engine && npm run build:engine:mobile && npm run build:lexicon && npm run build:pdf && npm run build:purify",
+    "build": "npm run build:engine && npm run build:engine:mobile && npm run build:lexicon && npm run build:pdf && npm run build:purify && npm run build:sample",
     "start": "npm run build && electron .",
     "dev": "electron .",
     "test": "node --test test/android-bridge.test.js && npm run build && electron test/pipeline.js && electron test/text-pipeline.js && electron test/features.js && electron test/reader-e2e.js && electron test/engine-missing.js && electron test/non-linear.js && electron test/unreadable-chapter.js",
@@ -23,7 +23,8 @@
     "package": "npm run build && node build/package.js",
     "dist": "npm run build && electron-builder --win nsis --publish never",
     "dist:linux": "npm run build && electron-builder --linux AppImage --publish never",
-    "dist:mac": "npm run build && electron-builder --mac dmg --arm64 --publish never"
+    "dist:mac": "npm run build && electron-builder --mac dmg --arm64 --publish never",
+    "build:sample": "node build/make-sample.js"
   },
   "devDependencies": {
     "@electron/packager": "^20.0.1",
@@ -63,6 +64,10 @@
       {
         "from": "LICENSE",
         "to": "LICENSE"
+      },
+      {
+        "from": "dist/sample.epub",
+        "to": "sample.epub"
       }
     ],
     "win": {
