@@ -1,4 +1,4 @@
-# Eupub Windows installer — exit codes
+# Eupub Windows installer — parameters and exit codes
 
 `eupub-Setup-<version>.exe` is an NSIS installer produced by electron-builder. It
 reports its outcome through the process exit code, which is what an unattended
@@ -37,13 +37,34 @@ The practical consequence is the rule at the top of this page: map `0` to
 success, and treat every other value as a failure whose cause is not
 distinguishable from the exit code alone.
 
+## Installer parameters
+
+| Operation | Parameter |
+| --- | --- |
+| **Silent install** | `/S` |
+| **Silent uninstall** | `/S` |
+
+Nothing else is needed, and nothing else should be passed.
+
+- **`/S` is honoured by the uninstaller as well as the installer.** That is worth
+  stating because it is not automatic for NSIS uninstallers; this one parses the
+  flag explicitly and switches itself to silent mode.
+- **Do not pass `/D=`.** It overrides the install directory, and it is
+  positionally fragile — it must be the final argument and must not be quoted, so
+  anything appended after it silently breaks the install. The default
+  (`%LOCALAPPDATA%\Programs\Eupub`) is the right location.
+- **`/allusers` and `/currentuser` exist but are irrelevant here.** Eupub is a
+  per-user application (`perMachine: false`), so current-user is already what
+  happens.
+- **A silent install does not launch the app afterwards.** Starting the app on
+  completion is gated on a force-run flag used by the updater, which nothing in a
+  store-driven install passes.
+
 ## Notes
 
 - **Nothing here requires administrator rights.** Eupub installs per-user, into
   `%LOCALAPPDATA%\Programs\Eupub` by default, so a standard user account can
   install and update it without elevation.
-- **Silent installation** uses `/S`. `/D=<absolute path>` sets the target
-  directory and, if given, must be the last argument and unquoted.
 - **Reboots are never required.** The installer does not install drivers or
   services and does not replace files that are in use by the operating system,
   so it neither requests nor requires a restart, and returns no reboot-pending
