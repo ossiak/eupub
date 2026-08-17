@@ -8,8 +8,14 @@
 #   Windows (windows-latest) -> eupub-Setup-<version>.exe, Authenticode-signed
 #     via Azure Artifact Signing when AZURE_CLIENT_ID is set, otherwise an
 #     unsigned installer.
+#   Android (ubuntu-latest) -> eupub-<version>.apk, signed when the keystore
+#     secrets below are set. UNLIKE the other three, an unsigned build is never
+#     attached to the release: an unsigned apk cannot be installed at all, so
+#     publishing one would put a file on the Releases page that no phone accepts.
+#     Without the secrets the job still builds (so forks and dry runs work) and
+#     leaves the result as a workflow artifact only.
 #
-# The three jobs run in parallel and each attaches its own asset (create-or-upload),
+# The four jobs run in parallel and each attaches its own asset (create-or-upload),
 # so there is no ordering dependency and a failure in one still ships the others'.
 #
 # Eupub reuses the euspell engine "as-is" from the sibling euspell_ext repo via
@@ -49,6 +55,15 @@
 # AZURE_CLIENT_ID doubles as the switch: the Configure signing step injects
 # build.win.azureSignOptions only when it is set, because electron-builder cannot
 # be asked to skip Azure signing once that block exists.
+#
+# Android signing secrets - optional in the same way, but with a sharper
+# consequence (see the apk note above). Android keys are self-generated; see
+# docs/android-signing.md for making the keystore and docs/android-play-submission.md
+# for what distribution then requires:
+#   ANDROID_KEYSTORE_BASE64   base64 of the release .jks; also the presence check
+#   ANDROID_KEYSTORE_PASSWORD the store password
+#   ANDROID_KEY_ALIAS         the key alias (eupub)
+#   ANDROID_KEY_PASSWORD      the key password
 name: Release
 
 on:
@@ -239,6 +254,121 @@ jobs:
         with:
           name: eupub-dmg
           path: eupub/release/Eupub-*-arm64.dmg
+          if-no-files-found: error
+
+  apk:
+    runs-on: ubuntu-latest # the runner image ships the Android SDK; no extra setup
+    steps:
+      - name: Check out eupub
+        uses: actions/checkout@v5
+        with:
+          path: eupub
+      - name: Check out euspell_ext (sibling engine source)
+        uses: actions/checkout@v5
+        with:
+          repository: ossiak/euspell
+          path: euspell_ext
+          token: ${{ secrets.EUSPELL_EXT_TOKEN }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            eupub/package-lock.json
+            euspell_ext/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17 # matches compileOptions/kotlinOptions in build.gradle.kts
+
+      - name: Build euspell_ext (engine + lexicon)
+        working-directory: euspell_ext
+        run: npm ci && npm run build
+
+      - name: Install Eupub deps
+        working-directory: eupub
+        run: npm ci
+
+      - name: Check tag matches package.json version
+        if: github.ref_type == 'tag'
+        working-directory: eupub
+        run: |
+          pkg="v$(node -p "require('./package.json').version")"
+          if [ "$pkg" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME != package.json $pkg -- bump package.json to match the tag"
+            exit 1
+          fi
+
+      # The build reads android/keystore.properties if it exists and silently
+      # produces an unsigned apk if it does not (see build.gradle.kts), which is
+      # what keeps forks and dry runs working. ANDROID_KEYSTORE_BASE64 is the
+      # switch, mirroring AZURE_CLIENT_ID in the Windows job.
+      - name: Restore keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "No Android keystore configured -- building an unsigned apk (it will not be published)."
+            exit 0
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/eupub.jks"
+          cat > eupub/android/keystore.properties <<EOF
+          storeFile=$RUNNER_TEMP/eupub.jks
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=$ANDROID_KEY_PASSWORD
+          EOF
+
+      # prepare-assets.mjs stages the renderer, engine, lexicon.db and PDF viewer
+      # into app/src/main/assets/. Those are gitignored derived files, so a build
+      # that skips this step compiles happily and ships the previous reader.
+      - name: Build the apk
+        working-directory: eupub
+        run: |
+          npm run build
+          node android/prepare-assets.mjs
+          cd android && ./gradlew --no-daemon assembleRelease
+
+      # Signed or not is decided by the build, not by us, so read it back off the
+      # artifact rather than inferring it from whether a secret was set.
+      - name: Verify the signature and name the file
+        id: apk
+        working-directory: eupub
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          out=android/app/build/outputs/apk/release
+          src="$(ls "$out"/*.apk | head -1)"
+          apksigner="$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
+          if "$apksigner" verify --print-certs "$src" > certs.txt 2>&1; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+            grep -E 'SHA-256 digest|certificate DN' certs.txt || true
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::apk is unsigned -- it will not be attached to the release."
+          fi
+          cp "$src" "$out/eupub-$version.apk"
+          echo "path=$out/eupub-$version.apk" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release
+        if: github.ref_type == 'tag' && steps.apk.outputs.signed == 'true'
+        working-directory: eupub
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK: ${{ steps.apk.outputs.path }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$APK" \
+            --title "Eupub ${GITHUB_REF_NAME#v}" \
+            --generate-notes \
+          || gh release upload "$GITHUB_REF_NAME" "$APK" --clobber
+
+      - name: Upload apk artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: eupub-apk
+          path: eupub/android/app/build/outputs/apk/release/eupub-*.apk
           if-no-files-found: error
 
   nsis:

@@ -170,15 +170,24 @@ deployed, or at least that page served.
 Screenshots have to come from the Android app itself, not from the desktop build:
 Play reviewers reject listings whose imagery is not the app being submitted.
 
-## 9. Optional — an Android job in CI
+## 9. The Android job in CI (done)
 
-Not required to submit, and worth doing only once the above works by hand.
-[android-signing.md](android-signing.md) carries the job outline, the four
-repository secrets and the base64 keystore trick. Add it beside `appimage`,
-`dmg` and `nsis` in [`release.yml`](../.github/workflows/release.yml), on
-`ubuntu-latest`, and keep it degrading gracefully so a secret-less run still
-builds. Note it needs the same sibling `euspell_ext` checkout the desktop jobs
-use.
+[`release.yml`](../.github/workflows/release.yml) now has an `apk` job beside
+`appimage`, `dmg` and `nsis`, on `ubuntu-latest`, using the same sibling
+`euspell_ext` checkout the desktop jobs use. It reads the four `ANDROID_*`
+secrets described in [android-signing.md](android-signing.md), and degrades the
+way the others do — without them the build still runs, so forks and dry runs
+work.
+
+**One place it deliberately does not follow the others.** The macOS and Windows
+jobs attach their asset whether or not it was signed, because an unsigned dmg or
+installer still runs after the user clicks through a warning. An unsigned apk
+does not install at all, so publishing one would put a file on the Releases page
+that no phone will accept. The job therefore verifies the built apk with
+`apksigner` and attaches it **only if it is signed**, leaving an unsigned build
+as a workflow artifact. Signedness is read back off the artifact rather than
+inferred from whether a secret was set, so a keystore that is present but wrong
+fails closed.
 
 ## 10. Alternatives to listing
 
@@ -209,12 +218,27 @@ them the way a store client would.
 
 Two prerequisites, neither of them large:
 
-1. **Releases must actually carry an APK.** None do today — `release.yml` has no
-   Android job (§9), so the APK is built and attached by hand until it does.
+1. **Releases must actually carry an APK.** None do yet. `release.yml` now has an
+   `apk` job that builds and attaches one, but it publishes **only when the build
+   was signed** — an unsigned apk cannot be installed at all, so putting one on
+   the Releases page would offer a file no phone accepts. So the keystore (§2)
+   and the four `ANDROID_*` secrets are what turn the job from a build into a
+   release asset.
 2. **Name the asset consistently**, `eupub-<version>.apk`, which is what
-   installing.md already tells users to look for. Obtainium matches release
-   assets by pattern, and a name that changes shape between releases breaks the
-   match silently.
+   installing.md already tells users to look for and what the job emits.
+   Obtainium matches release assets by pattern, and a name that changes shape
+   between releases breaks the match silently.
+3. **Correct installing.md on the same day the first apk ships**, not before. Two
+   statements there are true today and become false the moment a release carries
+   one, and they are worth grepping for rather than editing from memory:
+   - the note under the platform table, *"**No APK is published.** The release
+     workflow builds only the Linux, macOS and Windows assets…"*
+   - the troubleshooting row *"Android: no APK in the release — There isn't
+     one…"*
+
+   The platform table's own Android row (`build it yourself`) and the
+   [Android](installing.md#android) section's opening also need re-reading, since
+   both are written around the absence of a download.
 
 For the install page, the instructions are:
 
