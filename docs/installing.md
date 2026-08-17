@@ -31,8 +31,9 @@ Open the latest release and pick the file for your platform:
 > APK are built and attached automatically for every release — those four are
 > what a release contains. **iOS is the exception**: the release workflow has no
 > iOS job, so it has to be built from source (see
-> [Build it yourself](#build-it-yourself)). It has not been submitted to the App
-> Store, but it does run on a real device once you have built it.
+> [Build it yourself](#build-it-yourself)). It has been submitted to the App
+> Store but is not yet approved, so there is nothing to download — it does run on
+> a real device once you have built it.
 
 ## Windows
 
@@ -134,9 +135,9 @@ wants to can.
 
 ## iOS
 
-**Eupub is not on the App Store.** It has not been submitted, so there is nothing
-to search for — but the app itself runs on a real iPhone, and reads both EPUB and
-PDF, if you build it yourself.
+**Eupub is not on the App Store yet.** A first submission is in review, so there
+is nothing to search for today — but the app itself runs on a real iPhone, and
+reads both EPUB and PDF, if you build it yourself.
 
 It is an **iPhone** app, portrait only, and needs **iOS 17 or later**. iPad was
 dropped deliberately: the reader targets phone width, and an iPad build would
@@ -226,7 +227,7 @@ If there's no prebuilt file for your platform, or you want to run from source:
 | Linux: AppImage won't start / mount error | Install FUSE 2, or run `./Eupub-*.AppImage --appimage-extract-run`. Confirm it's executable (`chmod +x`). |
 | Android: *"App not installed"* or blocked | Allow **Install unknown apps** for the app opening the APK; in Play Protect choose **Install anyway**. Check the phone is Android 8.0+. |
 | Android: the new APK won't install over the old one | You are moving between a self-built (debug-signed) copy and a released one, and Android refuses to update across a key change. Uninstall first — note that removes your library and reading positions, which live in the app. |
-| iOS: can't find Eupub in the App Store | It is not there. The iOS port has not been submitted, so no search or region will find it. Build it yourself (see [iOS](#ios)). |
+| iOS: can't find Eupub in the App Store | It is not there yet — a first submission is in review, so no search or region will find it. Build it yourself (see [iOS](#ios)). |
 | iOS: "On My iPhone ▸ Eupub" is missing in Files | It appears once the app has been launched at least once — the folder is created on first run. Check you are in **Browse**, not **Recents**. |
 | A book opens in original spelling | Toggle euspell **on** in the reader chrome — it's a per-book setting that re-renders the chapter. |
 | A word looks wrong | Reforms are context-sensitive and a handful of ambiguous words are left unchanged deliberately — see the reform notes in the [README](../README.md). |
