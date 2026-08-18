@@ -14,14 +14,14 @@ before acting on them.
 
 | | State |
 | --- | --- |
-| Release keystore | **None.** `android/keystore.properties` does not exist; every APK so far is debug-signed |
+| Release keystore | **In place.** `android/keystore.properties` is git-ignored and written by CI from secrets; the published APK verifies v2+v3 against the release key |
 | `applicationId` | `org.euspell.eupub` — permanent once uploaded, so settle it now |
 | `compileSdk` / `targetSdk` | **34 / 34** — below Play's floor (see §3) |
 | Toolchain | AGP 8.5.2, Gradle 8.7, Kotlin 1.9.24 |
 | `minSdk` | 26 (Android 8.0) |
-| Version | 0.2.3, from `package.json`; `versionCode` derives to 203 automatically |
+| Version | 0.3.1, from `package.json`; `versionCode` derives to 301 automatically |
 | App bundle | **Never built.** `bundleRelease` is documented but has not been run |
-| CI | No Android job — `release.yml` has `appimage`, `dmg`, `nsis` only |
+| CI | **`apk` job added** — `release.yml` now has `appimage`, `dmg`, `apk`, `nsis`. It reads signedness back off the artifact with `apksigner`, so a wrong keystore fails closed (see the section on the Android job in CI) |
 | Launcher icons | Present, all densities |
 | Play store graphics | **None** — no 512×512 icon, no feature graphic, no phone screenshots |
 | Play Console account | Not registered |
