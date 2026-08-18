@@ -191,7 +191,8 @@ animation.
 - `npm run build:engine` — rollup bundles the engine (needs `euspell_ext/dist`).
 - `npm start` / `npm run dev` — launch Electron (start builds the engine first).
 - `npm run dist` — electron-builder → a single NSIS installer
-  (`release/eupub-Setup-<version>.exe`); unsigned, so SmartScreen warns.
+  (`release/eupub-Setup-<version>.exe`). Release builds are Authenticode-signed
+  in CI; a local `dist` is not, so SmartScreen warns about it.
 - `npm run package` — `@electron/packager` → an unpacked `out/…` folder.
 - `npm test` — offscreen-Electron tests: `pipeline.js` (EPUB parse+engine),
   `text-pipeline.js` (plain-text parse+engine), `features.js` (viewer mechanics over
@@ -200,12 +201,14 @@ animation.
 ## Limitations & known constraints
 
 **Scope / platform**
-- **Windows-oriented.** Packaging and testing target Windows (NSIS installer); the
-  Electron core is portable but macOS/Linux builds are not wired up.
-- **Unsigned installer** → Windows SmartScreen "unknown publisher"; removing it needs
-  code signing.
-- **EPUB and TXT only.** No PDF (the extension has its own PDF.js viewer), MOBI/AZW,
-  DOCX, or HTML-file input.
+- **macOS builds are arm64 only.** `release.yml` produces a signed Windows
+  installer, a notarized macOS disk image, a Linux AppImage and a signed Android
+  APK, but no Intel Mac build.
+- **iOS is not released.** It is in App Store review; until it clears, an iPhone
+  build has to be made from source.
+- **EPUB, PDF and TXT only.** No MOBI/AZW, DOCX, or HTML-file input. EPUB and TXT
+  go through the chapter pipeline; a PDF is fixed-layout, so it opens in the
+  embedded PDF.js viewer instead of through `EupubModel`.
 
 **Engine coupling**
 - **Hard dependency on `euspell_ext/dist`** via a relative import path
