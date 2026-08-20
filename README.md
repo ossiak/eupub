@@ -7,9 +7,11 @@ spelling. It runs as an Electron desktop app on **Windows**, **macOS**, and **Li
 pair that drives the browser extension and the PDF viewer. Nothing in the engine
 is re-implemented or modified here.
 
-> **Just want to install it?** See [docs/installing.md](docs/installing.md) for
-> per-platform steps (Windows, macOS, Linux, Android, iOS). The rest of this README is for
-> building and hacking on it.
+> **Just want to install it?** On iPhone, get it from the
+> **[App Store](https://apps.apple.com/us/app/eupub/id6801994679)**. For everything else see
+> [docs/installing.md](docs/installing.md) — per-platform steps for Windows,
+> macOS, Linux and Android. The rest of this README is for building and hacking
+> on it.
 
 ## How the reuse works
 

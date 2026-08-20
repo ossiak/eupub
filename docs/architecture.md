@@ -204,8 +204,9 @@ animation.
 - **macOS builds are arm64 only.** `release.yml` produces a signed Windows
   installer, a notarized macOS disk image, a Linux AppImage and a signed Android
   APK, but no Intel Mac build.
-- **iOS is not released.** It is in App Store review; until it clears, an iPhone
-  build has to be made from source.
+- **iOS ships from the App Store** — free, iPhone-only, iOS 17 or later. The
+  listing reads 0.2.3 against 0.3.1 elsewhere: the same iOS sources, submitted
+  before the mobile version strings were derived from `package.json`.
 - **EPUB, PDF and TXT only.** No MOBI/AZW, DOCX, or HTML-file input. EPUB and TXT
   go through the chapter pipeline; a PDF is fixed-layout, so it opens in the
   embedded PDF.js viewer instead of through `EupubModel`.

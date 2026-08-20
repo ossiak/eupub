@@ -135,9 +135,9 @@ wants to can.
 
 ## iOS
 
-**Eupub is not on the App Store yet.** A first submission is in review, so there
-is nothing to search for today — but the app itself runs on a real iPhone, and
-reads both EPUB and PDF, if you build it yourself.
+**[Eupub is on the App Store](https://apps.apple.com/us/app/eupub/id6801994679)** — free, and it reads both EPUB and PDF.
+Building it yourself is still an option, described below, but no longer the only
+way onto a phone.
 
 It is an **iPhone** app, portrait only, and needs **iOS 17 or later**. iPad was
 dropped deliberately: the reader targets phone width, and an iPad build would
@@ -167,10 +167,11 @@ reaches iCloud Drive and other providers.
 Android builds use, reforming the text while keeping the page's layout, so a PDF
 opened here is converted rather than just displayed.
 
-This section will describe the App Store route once there is one. It is written
-this way deliberately — an install page that promises a store listing which does
-not exist wastes the reader's time and teaches them to distrust the rest of the
-page.
+**The listing reads 0.2.3** where every other platform reads 0.3.1, which is
+worth explaining rather than leaving to be noticed. It is the same iOS code: the
+build went to review on 16 August, before the mobile version strings were derived
+from `package.json`, and re-submitting to change a number would have restarted
+the review queue for nothing.
 
 ## First run — reading in euspell
 
@@ -214,8 +215,8 @@ If there's no prebuilt file for your platform, or you want to run from source:
   simulator is not a valid target. For a physical device, stage and generate the project
   (`node ios/Eupub/prepare-assets.mjs && (cd ios/Eupub && xcodegen generate)`),
   open `ios/Eupub/Eupub.xcodeproj` in Xcode, set a signing **Team**, and **Run**.
-  This is the only way to run Eupub on iOS today; no App Store build has been
-  submitted. It reads EPUB and PDF, the latter through the same embedded viewer
+  The App Store build is the easy route; build from source to run changes that
+  have not shipped yet. It reads EPUB and PDF, the latter through the same embedded viewer
   the desktop and Android builds use, and its Documents folder is exposed so
   books can be dropped in from Files or Finder — see [iOS](#ios).
 
@@ -227,7 +228,7 @@ If there's no prebuilt file for your platform, or you want to run from source:
 | Linux: AppImage won't start / mount error | Install FUSE 2, or run `./Eupub-*.AppImage --appimage-extract-run`. Confirm it's executable (`chmod +x`). |
 | Android: *"App not installed"* or blocked | Allow **Install unknown apps** for the app opening the APK; in Play Protect choose **Install anyway**. Check the phone is Android 8.0+. |
 | Android: the new APK won't install over the old one | You are moving between a self-built (debug-signed) copy and a released one, and Android refuses to update across a key change. Uninstall first — note that removes your library and reading positions, which live in the app. |
-| iOS: can't find Eupub in the App Store | It is not there yet — a first submission is in review, so no search or region will find it. Build it yourself (see [iOS](#ios)). |
+| iOS: can't find Eupub in the App Store | Search for **Eupub** by *Kamran Ossia*, or open [the listing](https://apps.apple.com/us/app/eupub/id6801994679) directly. It needs **iOS 17 or later** and is iPhone-only, so an older phone or an iPad will not be offered it. |
 | iOS: "On My iPhone ▸ Eupub" is missing in Files | It appears once the app has been launched at least once — the folder is created on first run. Check you are in **Browse**, not **Recents**. |
 | A book opens in original spelling | Toggle euspell **on** in the reader chrome — it's a per-book setting that re-renders the chapter. |
 | A word looks wrong | Reforms are context-sensitive and a handful of ambiguous words are left unchanged deliberately — see the reform notes in the [README](../README.md). |
