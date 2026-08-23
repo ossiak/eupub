@@ -8,3 +8,14 @@ release/
 # Store screenshots — derived, regenerate with build/capture-store-shots.js
 build/store-shots/
 build/store-art/
+
+# Internal submission notes: kept locally, not published. The .txt files are
+# the payloads -- the answers sent to App Review, the store listing copy --
+# so they travel with the .md that explains them.
+docs/android-play-submission.md
+docs/ios-app-review.md
+docs/ios-app-review-notes.txt
+docs/ios-app-review-reply.txt
+docs/windows-store-submission.md
+docs/windows-store-certification-notes.txt
+docs/windows-store-listing.txt

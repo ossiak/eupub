@@ -79,7 +79,7 @@ launches fast (extracted once). The icon is the committed `build/icon.ico`.
 > publisher" prompt ("More info → Run anyway"). Released installers are
 > Authenticode-signed in CI through Azure Artifact Signing — see
 > [docs/windows-signing.md](docs/windows-signing.md), and
-> [docs/windows-store-submission.md](docs/windows-store-submission.md) for what a
+> an internal note on Microsoft Store submission for what a
 > Microsoft Store listing would additionally need.
 
 The **macOS** target builds an Apple-Silicon `.dmg` and must run on a Mac (dmg
@@ -92,7 +92,7 @@ The **Android** app is a separate native project under [`android/`](android/),
 built with Gradle; it wraps the same engine and PDF viewer for a WebView host.
 Release builds need a self-generated signing key — see
 [docs/android-signing.md](docs/android-signing.md) — and
-[docs/android-play-submission.md](docs/android-play-submission.md) covers what a
+An internal note covers what a
 Google Play listing additionally requires, and what the alternatives to one cost.
 
 ## Build an unpacked folder (for quick local testing)

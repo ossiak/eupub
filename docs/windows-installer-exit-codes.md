@@ -77,4 +77,4 @@ Nothing else is needed, and nothing else should be passed.
 Microsoft Store submissions for unpackaged (EXE) apps ask for the installer's
 return codes, and for a URL documenting any that are not enumerated in the
 submission form. This page is that URL. See
-[windows-store-submission.md](windows-store-submission.md).
+the internal Microsoft Store submission note.

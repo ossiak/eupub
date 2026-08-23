@@ -217,7 +217,7 @@ that — it's paperwork, not code.
 
 > The full route — target API level, the app bundle, the console account, the
 > closed-testing schedule and the store listing — is in
-> [android-play-submission.md](android-play-submission.md). What follows is the
+> an internal note on Play submission. What follows is the
 > signing half of it.
 
 Play doesn't take APKs from new apps — it takes an **Android App Bundle**, and it
