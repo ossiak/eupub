@@ -146,7 +146,7 @@ app's design and its readiness; Google's review is typically seven days or less.
 > **Minimum three weeks from a working bundle to a public listing**, and that
 > assumes twelve people are recruited and opted in on day one. This, not the
 > code, is the long pole — and it is why an Android listing cannot be part of the
-> 26 August launch.
+> 28 August launch.
 
 Recruit the testers while §3 is in progress; the two do not have to be serial.
 
