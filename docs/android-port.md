@@ -112,7 +112,7 @@ Use the injectable-lexicon work from `euspell_ext`:
   the engine's `tokenize`, query the DB for that subset (through the bridge, off
   the UI thread), build the subset Map, `setLexicon(subset)`, then run the normal
   `walkTextNodes`/`convert`. Proven byte-identical to the full table across all
-  5903 disambiguating words; resident cost ~0.4 MB/chapter vs ~79 MB.
+  5920 disambiguating words; resident cost ~0.4 MB/chapter vs ~79 MB.
 - Budget ~150–250 ms/chapter for the subset fetch on a mid-range phone — run it
   off the main thread and it overlaps rendering.
 
