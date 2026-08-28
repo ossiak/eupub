@@ -205,8 +205,9 @@ animation.
   installer, a notarized macOS disk image, a Linux AppImage and a signed Android
   APK, but no Intel Mac build.
 - **iOS ships from the App Store** — free, iPhone-only, iOS 17 or later. The
-  listing reads 0.2.3 against 0.3.1 elsewhere: the same iOS sources, submitted
-  before the mobile version strings were derived from `package.json`.
+  listing reads 0.2.3 against 0.3.3 elsewhere: the same iOS sources, first
+  submitted before the mobile version strings were derived from `package.json`.
+  0.3.3 is in review as of 27 August.
 - **EPUB, PDF and TXT only.** No MOBI/AZW, DOCX, or HTML-file input. EPUB and TXT
   go through the chapter pipeline; a PDF is fixed-layout, so it opens in the
   embedded PDF.js viewer instead of through `EupubModel`.
