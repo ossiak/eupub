@@ -167,12 +167,12 @@ reaches iCloud Drive and other providers.
 Android builds use, reforming the text while keeping the page's layout, so a PDF
 opened here is converted rather than just displayed.
 
-**The listing reads 0.2.3** where every other platform reads 0.3.3, which is
-worth explaining rather than leaving to be noticed. It is the same reader. The
-first build went to review on 16 August, before the mobile version strings were
-derived from `package.json`, and re-submitting only to change a number would
-have restarted the queue for nothing. 0.3.3 was submitted on 27 August and is
-in review now; the listing updates itself once Apple clears it.
+**The listing reads 0.3.3**, the same as every other platform, since Apple
+approved it on **28 August**. It had read 0.2.3 until then, which is worth
+recording rather than leaving as a puzzle in the history: the first build went to
+review on 16 August, before the mobile version strings were derived from
+`package.json`, and re-submitting only to change a number would have restarted
+the queue for nothing.
 
 ## First run — reading in euspell
 
