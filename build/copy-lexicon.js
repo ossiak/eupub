@@ -18,10 +18,19 @@ const destDir = path.join(EUPUB, 'dist');
 // under which a bare .js would be parsed as CommonJS and choke on `export`).
 const dest = path.join(destDir, 'lexicon.mjs');
 
-// What compile-lexicon.js reads: the four lexicon CSVs, plus the compiler itself
+// What compile-lexicon.js reads: the lexicon CSVs, plus the compiler itself
 // (a change to how rows are encoded changes the output just as an edited row
-// does). Named rather than globbing all of data/, so touching an unrelated file
-// there — the IPA tables, the encoding reference — doesn't force a rebuild.
+// does). Matched by prefix rather than globbing all of data/, so touching an
+// unrelated file there — the IPA tables, the encoding reference — doesn't force
+// a rebuild.
+//
+// The prefix now also catches euspell_lexicon_accents.csv, which arrived in
+// euspell_ext on 31 Aug 2026 and which compile-lexicon.js does NOT read: it maps
+// accented spellings to the ASCII headwords they resolve to, for the converter
+// rather than the compiled Map. Editing it therefore forces a rebuild that
+// cannot change the output. That costs a rebuild, never a wrong one, so the
+// prefix is left broad — the failure this guards against is missing a real
+// source, not doing redundant work.
 function lexiconSources() {
   const data = path.join(EXT, 'data');
   const csvs = fs.existsSync(data)
