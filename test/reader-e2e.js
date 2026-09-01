@@ -293,22 +293,69 @@ app.whenReady().then(async () => {
     return { on, off, back: read() };
   })()`);
 
-  // Wheel-over-Contents (run last — it advances the chapter). The wheel must be
-  // prevented (TOC won't scroll) and must page the book past the 1-page ch1 to ch2.
-  const wheel = await win.webContents.executeJavaScript(`(async () => {
+  // Wheel over Contents must do NOTHING to the book: it is not prevented (so the
+  // panel keeps whatever native scrolling it has — none, when the list fits) and
+  // the chapter does not move. The reader owns no wheel handler at all now.
+  const tocWheel = await win.webContents.executeJavaScript(`(async () => {
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    // The handler only acts while Contents is the active tab (so other panels
-    // scroll normally); an earlier step switched to Marks, so re-activate it.
+    // An earlier step switched to Marks; Contents is the tab under test.
     document.querySelector('.tab[data-tab="toc"]').click();
     await sleep(50);
+    const before = document.getElementById('status-right').textContent;
+    const panel = document.getElementById('panel-toc');
     const evt = new WheelEvent('wheel', { deltaY: 120, bubbles: true, cancelable: true });
-    document.getElementById('panel-toc').dispatchEvent(evt);
-    let advanced = false;
-    for (let i = 0; i < 50; i++) {
-      if (/Ch 2\\//.test(document.getElementById('status-right').textContent)) { advanced = true; break; }
+    panel.dispatchEvent(evt);
+    await sleep(400);
+    return {
+      prevented: evt.defaultPrevented,
+      moved: document.getElementById('status-right').textContent !== before,
+      // A list that fits its window must not be scrollable at all.
+      scrolled: panel.scrollTop !== 0,
+    };
+  })()`);
+
+  // Wheel over the book pages it, on a plain vertical (mouse-wheel) delta with
+  // no deltaX. This must be checked on a MULTI-page chapter: the old code let a
+  // vertical delta through on single-page sections, so a one-page chapter — what
+  // the sample book has by default — passes either way and proves nothing. The
+  // test chapter is one sentence, so no font size splits it in a 900px window:
+  // the window is shrunk instead, which reflows it across several columns.
+  // Run last: it ends by advancing the chapter.
+  win.setContentSize(300, 220);
+  await new Promise((r) => setTimeout(r, 600));
+
+  const wheel = await win.webContents.executeJavaScript(`(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const status = () => document.getElementById('status-right').textContent;
+    const pages = () => (status().match(/p \\d+\\/(\\d+)/) || [0, 0])[1] | 0;
+    const page = () => (status().match(/p (\\d+)\\//) || [0, 0])[1] | 0;
+    const wheelIt = () => document.getElementById('chapter').contentDocument
+      .dispatchEvent(new WheelEvent('wheel', { deltaY: 120, bubbles: true, cancelable: true }));
+
+    for (let i = 0; i < 8 && pages() < 2; i++) {
+      document.getElementById('font-up').click();
+      await sleep(250);
+    }
+    const multi = pages() >= 2;
+
+    // Within a multi-page chapter: p 1/N -> p 2/N.
+    wheelIt();
+    let turned = false;
+    for (let i = 0; i < 30; i++) {
+      if (page() > 1) { turned = true; break; }
       await sleep(100);
     }
-    return { prevented: evt.defaultPrevented, advanced };
+
+    // And off the end of the chapter, to the next one.
+    let advanced = false;
+    for (let i = 0; i < 30 && !advanced; i++) {
+      wheelIt();
+      for (let j = 0; j < 8; j++) {
+        if (/Ch 2\\//.test(status())) { advanced = true; break; }
+        await sleep(60);
+      }
+    }
+    return { multi, turned, advanced };
   })()`);
 
   const checks = [
@@ -351,7 +398,16 @@ app.whenReady().then(async () => {
       toc.off.join('|') === 'Chapter One|Chapter Two' && toc.back.join('|') === 'Qhapter Wun|Qhapter Twu',
       'off="' + toc.off.join(' | ') + '" back="' + toc.back.join(' | ') + '"',
     ],
-    ['toc-wheel-paginates', wheel.prevented && wheel.advanced, 'prevented=' + wheel.prevented + ' advanced=' + wheel.advanced],
+    [
+      'toc-wheel-inert',
+      !tocWheel.prevented && !tocWheel.moved && !tocWheel.scrolled,
+      'prevented=' + tocWheel.prevented + ' moved=' + tocWheel.moved + ' scrolled=' + tocWheel.scrolled,
+    ],
+    [
+      'book-wheel-paginates',
+      wheel.multi && wheel.turned && wheel.advanced,
+      'multiPage=' + wheel.multi + ' turnedWithin=' + wheel.turned + ' advancedChapter=' + wheel.advanced,
+    ],
     ['recent-stored', recentMenu.storedLen >= 1, 'recent=' + recentMenu.storedLen],
     [
       'recent-menu-opens',

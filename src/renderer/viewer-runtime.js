@@ -457,16 +457,19 @@ window.EupubViewerRuntime = function () {
   var wheelIdle = null;
   var wheelActedThisBurst = false;
   document.addEventListener('wheel', function (e) {
-    var horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY);
-    // Normally page only on horizontal-dominant swipes — vertical swipes have no
-    // scrollable content to move. But a SINGLE-page section (a full-bleed cover, a
-    // short title page) has nothing to page within it, so a vertical swipe would do
-    // nothing and leave the reader unable to swipe past it. There, let either axis
-    // turn the page — the turn falls through to the next section.
-    if (!horizontal && pageCount > 1) return;
-    var raw = horizontal ? e.deltaX : e.deltaY;
-    // Normalize away the OS "natural scrolling" setting so a physical swipe-left
-    // (or, on a single-page section, swipe-up) is ALWAYS "next". The sign already
+    // EITHER axis turns the page. This body is overflow:hidden and laid out in
+    // CSS columns, so there is no vertical scrolling here to defer to — the
+    // dominant axis is simply whichever one the device reports.
+    //
+    // It used to page only on horizontal-dominant swipes, with an exception for
+    // single-page sections. A mouse wheel reports deltaY alone, so that test was
+    // never true for one: the wheel turned the page on a cover or a title page
+    // and did nothing at all on every multi-page chapter, which is the whole of
+    // a book. Trackpads were unaffected, which is why it survived. The sidebar
+    // handler in reader.js had already been fixed for the same reason.
+    var raw = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    // Normalize away the OS "natural scrolling" setting so a physical swipe-left,
+    // or a wheel/swipe down, is ALWAYS "next". The sign already
     // bakes that setting in, and only the host can read it:
     // window.__eupubNaturalScroll (reader.js injects it into this iframe, and the
     // desktop main reads the OS setting; undefined → natural, the mobile/default

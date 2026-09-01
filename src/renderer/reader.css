@@ -213,7 +213,12 @@ body.immersive #statusbar { display: none; }
 .panel {
   display: none;
   flex: 1;
+  /* `auto`, not `scroll`: a panel shorter than its window has no scrollbar and
+     the wheel over it does nothing, which is what Contents should do when the
+     whole list already fits. `contain` stops a wheel that reaches the end of a
+     long list from chaining outwards. */
   overflow-y: auto;
+  overscroll-behavior: contain;
   min-height: 0;
 }
 .panel.active { display: block; }

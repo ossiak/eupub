@@ -254,13 +254,12 @@
       applyTocSpelling();
     });
 
-    // Over the Contents sidebar the wheel paginates the book rather than
-    // scrolling the TOC — the TOC is navigated by clicking. Registered on the
-    // window in the CAPTURE phase (passive:false) so it intercepts the wheel
-    // before any scroll can start, for the whole sidebar area. Wheel over the
-    // book stays in the iframe; wheel over the other (scrollable) tabs is left
-    // alone. (See onSidebarWheel.)
-    window.addEventListener('wheel', onSidebarWheel, { capture: true, passive: false });
+    // The wheel is not handled here at all. Over the sidebar it scrolls that
+    // panel natively — which does nothing when the list is shorter than its
+    // window, and cannot scroll anything else either, since html/body are
+    // overflow:hidden so there is no ancestor for the scroll to chain to.
+    // Page-turning belongs to the wheel over the book, which the iframe's own
+    // handler owns (viewer-runtime.js).
 
     // Page-turn direction must NOT follow the OS "natural scrolling" toggle (see
     // viewer-runtime.js). deltaX's sign bakes that setting in and only the host
@@ -1035,37 +1034,6 @@
     if (state.index < 0) return;
     if (key === 'ArrowRight') navNext();
     else if (key === 'ArrowLeft') navPrev();
-  }
-
-  // Wheel over the Contents sidebar: never scroll the TOC (click-only), instead
-  // page the book — matching the in-iframe wheel feel (threshold + idle-debounce,
-  // one page-turn per swipe burst; see viewer-runtime.js's wheel handler for why
-  // a fixed-window lock double-fires on longer/momentum swipes). Only acts while
-  // the Contents tab is active, so the scrollable Marks/Notes/Search panels keep
-  // their normal wheel scrolling.
-  let tocWheelIdle = null;
-  let tocWheelActedThisBurst = false;
-  function onSidebarWheel(e) {
-    if (state.index < 0) return;
-    if (!els.sidebar.contains(e.target)) return;
-    if (!els.panelToc.classList.contains('active')) return;
-    e.preventDefault();
-    // EITHER axis pages the book. The in-iframe handler takes horizontal-dominant
-    // swipes only because a vertical one there has real scrolling to defer to; the
-    // TOC is click-only, so there is nothing to defer to here — and a mouse wheel
-    // reports deltaY alone, so requiring horizontal dominance made the wheel dead
-    // over Contents (prevented, then discarded) for everyone without a trackpad.
-    const raw = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-    // Normalize away the OS natural-scrolling setting — see viewer-runtime.js.
-    const d = window.__eupubNaturalScroll === false ? -raw : raw;
-    if (Math.abs(d) < 8) return;
-    // Only a qualifying event extends the burst — see viewer-runtime.js for why.
-    clearTimeout(tocWheelIdle);
-    tocWheelIdle = setTimeout(() => { tocWheelActedThisBurst = false; }, 70);
-    if (tocWheelActedThisBurst) return;
-    tocWheelActedThisBurst = true;
-    if (d > 0) navNext();
-    else navPrev();
   }
 
   function updateNavState() {
