@@ -24,13 +24,14 @@ const dest = path.join(destDir, 'lexicon.mjs');
 // unrelated file there — the IPA tables, the encoding reference — doesn't force
 // a rebuild.
 //
-// The prefix now also catches euspell_lexicon_accents.csv, which arrived in
-// euspell_ext on 31 Aug 2026 and which compile-lexicon.js does NOT read: it maps
-// accented spellings to the ASCII headwords they resolve to, for the converter
-// rather than the compiled Map. Editing it therefore forces a rebuild that
-// cannot change the output. That costs a rebuild, never a wrong one, so the
-// prefix is left broad — the failure this guards against is missing a real
-// source, not doing redundant work.
+// The prefix also catches euspell_lexicon_accents.csv, which maps accented
+// spellings to the ASCII headwords they resolve to. It arrived in euspell_ext on
+// 31 Aug 2026 unread by anything, and compile-lexicon.js began reading it on 1 Sep:
+// build/lib/accents.js turns those rows into alias keys appended to the compiled
+// Map. So it is a real source now, and a rebuild on its edit is required rather
+// than merely harmless — which is the case the broad prefix was already right
+// about. The failure this guards against is missing a source, not doing redundant
+// work.
 function lexiconSources() {
   const data = path.join(EXT, 'data');
   const csvs = fs.existsSync(data)
