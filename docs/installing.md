@@ -7,13 +7,16 @@ happens locally. This page is for people installing a released build. To build i
 from source instead, see the [README](../README.md).
 
 It runs as a desktop app on **Windows**, **macOS**, and **Linux**, an early
-**Android** app, and an **iOS** app for iPhone.
+**Android** app, and an **iPhone** app on the App Store.
 
 ## Which download
 
-The desktop and Android builds live on the **Releases** page. Neither is in a
-store: Android is downloaded and installed directly (see [Android](#android)),
-and iOS is build-it-yourself (see [iOS](#ios)).
+On **iPhone**, install Eupub from the **App Store** — see [iOS](#ios):
+
+<https://apps.apple.com/us/app/eupub/id6801994679>
+
+Everything else lives on the **Releases** page, and none of it is in a store:
+Android is downloaded and installed directly (see [Android](#android)).
 
 <https://github.com/ossiak/eupub/releases>
 
@@ -25,15 +28,15 @@ Open the latest release and pick the file for your platform:
 | **macOS** (Apple Silicon) | `Eupub-<version>-arm64.dmg` | Disk image |
 | **Linux** (x86-64) | `Eupub-<version>.AppImage` | Single portable binary |
 | **Android** 8.0+ | `eupub-<version>.apk` | Signed app, installed directly (preview) |
-| **iOS** 17+ (iPhone) | build it yourself | Xcode build onto your own device |
+| **iOS** 17+ (iPhone) | the App Store, not the release | Free store listing |
 
 > The Linux AppImage, the macOS disk image, the Windows installer and the Android
 > APK are built and attached automatically for every release — those four are
 > what a release contains. **iOS is the exception**: the release workflow has no
-> iOS job, so it has to be built from source (see
-> [Build it yourself](#build-it-yourself)). It has been submitted to the App
-> Store but is not yet approved, so there is nothing to download — it does run on
-> a real device once you have built it.
+> iOS job, because the iPhone app ships through the App Store instead. It reads
+> its version from the same `package.json` field, so the listing and the release
+> carry the same number, though the listing can trail a new release by a few
+> days while App Review looks at it. As of 2 September both are **0.3.4**.
 
 ## Windows
 
@@ -135,27 +138,21 @@ wants to can.
 
 ## iOS
 
-**[Eupub is on the App Store](https://apps.apple.com/us/app/eupub/id6801994679)** — free, and it reads both EPUB and PDF.
-Building it yourself is still an option, described below, but no longer the only
-way onto a phone.
+Eupub for iPhone is **free on the App Store**, and it reads both EPUB and PDF.
+
+<https://apps.apple.com/us/app/eupub/id6801994679>
 
 It is an **iPhone** app, portrait only, and needs **iOS 17 or later**. iPad was
 dropped deliberately: the reader targets phone width, and an iPad build would
 have to support all four orientations to satisfy App Store validation.
 
-1. Stage the assets and generate the project:
+1. On the phone, open [the listing](https://apps.apple.com/us/app/eupub/id6801994679),
+   or search the App Store for **Eupub** by *Kamran Ossia*.
+2. Tap **Get**. Updates arrive through the App Store like any other app's.
+3. Open Eupub and pick a book with the **Open** button.
 
-   ```sh
-   node ios/Eupub/prepare-assets.mjs
-   cd ios/Eupub && xcodegen generate
-   ```
-
-2. Open `ios/Eupub/Eupub.xcodeproj` in Xcode, set a signing **Team**, and **Run**
-   onto a device or the simulator. A free Apple ID works; the resulting build is
-   a development one, not something you can pass to anyone else.
-3. `ios/Eupub/run.sh` drives the simulator instead, optionally with a device
-   name: `./run.sh "iPhone 17 Pro"` — any iPhone from
-   `xcrun simctl list devices available`.
+To run a build of your own instead — a change that has not shipped yet, say —
+see [Build it yourself](#build-it-yourself).
 
 **Getting books onto the device.** The app's Documents folder is exposed, so it
 appears as **On My iPhone ▸ Eupub** in the Files app and under the device in
@@ -166,13 +163,6 @@ reaches iCloud Drive and other providers.
 **PDFs work as they do elsewhere** — the same embedded viewer the desktop and
 Android builds use, reforming the text while keeping the page's layout, so a PDF
 opened here is converted rather than just displayed.
-
-**The listing reads 0.3.3**, the same as every other platform, since Apple
-approved it on **28 August**. It had read 0.2.3 until then, which is worth
-recording rather than leaving as a puzzle in the history: the first build went to
-review on 16 August, before the mobile version strings were derived from
-`package.json`, and re-submitting only to change a number would have restarted
-the queue for nothing.
 
 ## First run — reading in euspell
 
@@ -213,13 +203,12 @@ If there's no prebuilt file for your platform, or you want to run from source:
   generates the project, builds (no signing), installs, and launches. Pass a device
   name to choose one, e.g. `./run.sh "iPhone 17 Pro"` (any iPhone from
   `xcrun simctl list devices available`) — the app is iPhone-only, so an iPad
-  simulator is not a valid target. For a physical device, stage and generate the project
-  (`node ios/Eupub/prepare-assets.mjs && (cd ios/Eupub && xcodegen generate)`),
-  open `ios/Eupub/Eupub.xcodeproj` in Xcode, set a signing **Team**, and **Run**.
-  The App Store build is the easy route; build from source to run changes that
-  have not shipped yet. It reads EPUB and PDF, the latter through the same embedded viewer
-  the desktop and Android builds use, and its Documents folder is exposed so
-  books can be dropped in from Files or Finder — see [iOS](#ios).
+  simulator is not a valid target. For a physical device, stage and generate the
+  project with
+  `node ios/Eupub/prepare-assets.mjs && (cd ios/Eupub && xcodegen generate)`,
+  open `ios/Eupub/Eupub.xcodeproj` in Xcode, set a signing **Team**, and **Run**. A free Apple ID works; the result is a development build, not
+  something you can pass to anyone else. The App Store build is the easy route;
+  build from source to run changes that have not shipped yet.
 
 ## If something looks wrong
 
