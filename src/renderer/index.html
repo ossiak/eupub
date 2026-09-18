@@ -90,6 +90,21 @@
       <div id="selection-popup" class="selection-popup hidden">
         <button id="hl-add" class="popup-btn">Highlight</button>
       </div>
+      <!-- About panel. Opened from the Open ▾ menu, which is the only control
+           that stays enabled with no book open and is present at every width —
+           the ⋯ overflow menu is phone-only, and the app has no menu bar (main
+           .js calls removeMenu). Dismissed by Escape or a click outside, reusing
+           the handlers the menus already have. -->
+      <div id="about" class="about hidden" role="dialog" aria-modal="false" aria-labelledby="about-title">
+        <h2 id="about-title">Eupub</h2>
+        <p id="about-version" class="about-version"></p>
+        <p class="about-desc">A standalone reader that renders EPUB, PDF and plain-text
+          books in <strong>euspell</strong> reformed spelling.</p>
+        <dl id="about-facts" class="about-facts"></dl>
+        <p class="about-legal">GPL-3.0-or-later ·
+          <a id="about-site" href="https://euspell.org/">euspell.org</a></p>
+        <button id="about-close" class="popup-btn">Close</button>
+      </div>
     </section>
   </main>
 

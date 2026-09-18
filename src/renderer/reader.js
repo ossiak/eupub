@@ -41,6 +41,11 @@
     searchResults: $('search-results'),
     popup: $('selection-popup'),
     hlAdd: $('hl-add'),
+    about: $('about'),
+    aboutVersion: $('about-version'),
+    aboutFacts: $('about-facts'),
+    aboutClose: $('about-close'),
+    aboutSite: $('about-site'),
   };
 
   // Block-level selector: matches viewer-runtime's BLOCK, used to find the leaf
@@ -230,12 +235,24 @@
       else if (act === 'theme') toggleTheme();
     });
 
+    // The About panel dismisses like the menus do. Its own clicks are stopped
+    // the way the Open menu's are, so a click inside it isn't "outside".
+    els.about.addEventListener('click', (e) => e.stopPropagation());
+    els.aboutClose.addEventListener('click', closeAbout);
+    // The site link goes to the system browser: this window is the reader, and
+    // navigating it away from index.html would leave no way back.
+    els.aboutSite.addEventListener('click', (e) => {
+      e.preventDefault();
+      window.eupub.openExternal(els.aboutSite.href);
+    });
+
     document.addEventListener('click', (e) => {
       if (!els.openWrap.contains(e.target)) closeOpenMenu();
       if (!els.moreWrap.contains(e.target)) closeMoreMenu();
+      closeAbout();
     });
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { closeOpenMenu(); closeMoreMenu(); }
+      if (e.key === 'Escape') { closeOpenMenu(); closeMoreMenu(); closeAbout(); }
     });
     els.sidebarBtn.addEventListener('click', () => {
       const hidden = els.sidebar.classList.toggle('hidden');
@@ -308,6 +325,9 @@
         return;
       }
       if (document.activeElement === els.searchInput) return;
+      // With About open, focus is on its Close button — page turns would happen
+      // behind the panel with nothing to show for them.
+      if (!els.about.classList.contains('hidden')) return;
       handleNavKey(e.key);
     });
   }
@@ -366,6 +386,8 @@
     // with no engine the toggle would silently do nothing (see init).
     els.euspell.disabled = !state.engineSource;
     document.body.classList.remove('pdf-mode');
+    state.pdfZoomLevels = null;
+    setMagnifyTitles(false);
 
     // Validate before committing any state: a book with no readable spine
     // (malformed OPF, or nothing but non-linear items) would render a blank
@@ -469,6 +491,12 @@
     enableControls(false);
     els.euspell.disabled = true;
     els.sidebarBtn.disabled = false; // the sidebar carries the TOC in PDF mode
+    // A−/A+ magnify a PDF by re-rasterizing it larger, not by reflowing text, so
+    // they drive the viewer's zoom ladder instead of prefs.fontSize. The ladder
+    // is the VIEWER's and arrives with 'ready', so there is nothing to step until
+    // then: applyPdfZoom enables the two buttons when it does.
+    state.pdfZoomLevels = null;
+    setMagnifyTitles(true);
     document.body.classList.add('pdf-mode'); // hides the deferred (Marks/Notes/Search) tabs
     // Force Contents active (a prior EPUB may have left another tab selected)
     // without opening the sidebar — unlike switchTab, which reveals it.
@@ -520,6 +548,15 @@
     if (d.eupubPdf === 'ready') {
       state.pdfPages = d.pages || 0;
       renderPdfToc(d.outline || []);
+      // The zoom ladder is the viewer's, reported here so there is only one copy
+      // of it (see zoomIndexFor in euspell_ext's pdf/viewer.js). A viewer that
+      // doesn't report one simply leaves A−/A+ disabled — which is what an older
+      // embedded build should do, rather than send commands nothing acts on.
+      state.pdfZoomLevels = Array.isArray(d.zoomLevels) && d.zoomLevels.length ? d.zoomLevels : null;
+      // Before the page restore: relayout keeps the anchor page and the fraction
+      // into it, so this lands either way, but zooming first leaves the goto
+      // scroll as the last word on where the reader opens.
+      applyPdfZoom();
       // != null: a saved page 0 is falsy but real. Consumed once — a later
       // 'ready' (viewer reload) must not yank the reader back to the resume.
       if (state.pdfResume != null) postGoto(state.pdfResume);
@@ -537,6 +574,54 @@
 
   function postGoto(page) {
     els.pdf.contentWindow?.postMessage({ eupubPdfCmd: true, goto: page }, state.pdfOrigin);
+  }
+
+  // --- PDF magnification ----------------------------------------------
+  // A−/A+ in PDF mode. What persists is the FACTOR, not its index on the
+  // ladder: the ladder lives in the viewer, so a stored index would be silently
+  // reinterpreted the day it changes — a reader's saved 100% coming back as
+  // 125%. Global rather than per-book, matching prefs.fontSize.
+  //
+  // Silent by design: no percentage readout, for the same reason the EPUB font
+  // size has none. #progress and the footer already carry the position, and the
+  // pages visibly change size.
+
+  /** The ladder stop nearest `factor`; the viewer snaps again on its own side. */
+  function nearestZoomIndex(levels, factor) {
+    let best = 0;
+    for (let i = 1; i < levels.length; i++) {
+      if (Math.abs(levels[i] - factor) < Math.abs(levels[best] - factor)) best = i;
+    }
+    return best;
+  }
+
+  function changePdfZoom(dir) {
+    const levels = state.pdfZoomLevels;
+    if (!levels) return; // no ladder reported — the buttons are disabled anyway
+    const at = nearestZoomIndex(levels, prefs.pdfZoom);
+    prefs.pdfZoom = levels[Math.max(0, Math.min(levels.length - 1, at + dir))];
+    savePrefs();
+    applyPdfZoom();
+  }
+
+  // Push the current factor to the viewer and grey out whichever button has run
+  // out of ladder. Sent even when the factor hasn't moved (on 'ready', where it
+  // is the restore) — the viewer's setZoom no-ops on a stop it is already at.
+  function applyPdfZoom() {
+    const levels = state.pdfZoomLevels;
+    if (!levels) return;
+    const at = nearestZoomIndex(levels, prefs.pdfZoom);
+    els.fontDown.disabled = at === 0;
+    els.fontUp.disabled = at === levels.length - 1;
+    els.pdf.contentWindow?.postMessage({ eupubPdfCmd: true, zoom: prefs.pdfZoom }, state.pdfOrigin);
+  }
+
+  // A−/A+ resize text in a chapter but magnify the whole page in a PDF, so the
+  // tooltips say which. The glyphs stay put: they read as magnification either
+  // way, and relabelling them would shift the toolbar on every open.
+  function setMagnifyTitles(pdf) {
+    els.fontDown.title = pdf ? 'Zoom out' : 'Smaller text';
+    els.fontUp.title = pdf ? 'Zoom in' : 'Larger text';
   }
 
   // Service one relayed native call from the desktop viewer frame. Strictly
@@ -1560,6 +1645,9 @@
   // --- prefs ----------------------------------------------------------
 
   function changeFont(dir) {
+    // Same two buttons, two mechanisms: a chapter reflows at a new font size, a
+    // PDF is fixed-layout and re-rasterizes at a new scale.
+    if (state.pdf) return changePdfZoom(dir);
     prefs.fontSize = Math.max(12, Math.min(30, prefs.fontSize + dir));
     savePrefs();
     reRenderKeepingPlace();
@@ -1601,7 +1689,7 @@
     return legacy != null ? legacy : fallback;
   }
   function loadPrefs() {
-    const defaults = { euspell: true, fontSize: 14, theme: 'light', searchCaseSensitive: false };
+    const defaults = { euspell: true, fontSize: 14, pdfZoom: 1, theme: 'light', searchCaseSensitive: false };
     let stored = {};
     try {
       stored = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') || {};
@@ -1616,6 +1704,12 @@
     p.fontSize = Number(p.fontSize);
     if (!Number.isFinite(p.fontSize)) p.fontSize = defaults.fontSize;
     p.fontSize = Math.max(12, Math.min(30, Math.round(p.fontSize)));
+    // No range clamp on pdfZoom: the viewer's ladder is the authority on what a
+    // valid factor is, and nearestZoomIndex snaps whatever is stored onto it. A
+    // non-positive or non-numeric value has no nearest stop worth guessing at,
+    // so it resets rather than snapping to the floor.
+    p.pdfZoom = Number(p.pdfZoom);
+    if (!Number.isFinite(p.pdfZoom) || p.pdfZoom <= 0) p.pdfZoom = defaults.pdfZoom;
     if (p.theme !== 'dark' && p.theme !== 'light') p.theme = defaults.theme;
     return p;
   }
@@ -1696,7 +1790,6 @@
       empty.className = 'menu-empty';
       empty.textContent = 'No recent books';
       menu.appendChild(empty);
-      return;
     }
     for (const r of recents) {
       const item = document.createElement('button');
@@ -1721,6 +1814,62 @@
       item.appendChild(del);
       menu.appendChild(item);
     }
+
+    // About lives here because this menu is the only always-reachable one: it is
+    // left enabled by enableControls(false), it shows at every width (unlike the
+    // ⋯ overflow menu, which is phone-only), and it opens with or without a book.
+    const sep2 = document.createElement('div');
+    sep2.className = 'menu-sep';
+    menu.appendChild(sep2);
+    const about = document.createElement('button');
+    about.className = 'menu-item';
+    about.textContent = 'About Eupub';
+    about.addEventListener('click', () => {
+      closeOpenMenu();
+      openAbout();
+    });
+    menu.appendChild(about);
+  }
+
+  // --- about ----------------------------------------------------------
+
+  // Version, engine state and licence. Filled on open rather than at startup so
+  // it always reflects the current session — the engine line in particular is
+  // the same fact the toolbar's disabled euspell toggle reports.
+  async function openAbout() {
+    els.about.classList.remove('hidden');
+
+    // Asked for every time, not cached: it is one call, and a stale answer here
+    // would be worse than a slow one.
+    let version = null;
+    try {
+      // Feature-detected, like samplePath: an older mobile bridge predates this
+      // channel, and a missing version should cost the panel one line, not the
+      // whole dialog. A bridge whose assets were built without the substitution
+      // answers null, which lands in the same branch.
+      if (typeof window.eupub.version === 'function') version = await window.eupub.version();
+    } catch (err) {
+      console.error(err);
+    }
+    els.aboutVersion.textContent = version ? `Version ${version}` : 'Version unknown';
+
+    const facts = [
+      ['Spelling engine', state.engineSource ? 'Built in' : 'Not built'],
+      ['Book', state.book ? (state.pdf ? 'PDF' : 'EPUB / text') : 'None open'],
+    ];
+    els.aboutFacts.replaceChildren();
+    for (const [label, value] of facts) {
+      const dt = document.createElement('dt');
+      dt.textContent = label;
+      const dd = document.createElement('dd');
+      dd.textContent = value;
+      els.aboutFacts.append(dt, dd);
+    }
+    els.aboutClose.focus();
+  }
+
+  function closeAbout() {
+    els.about.classList.add('hidden');
   }
 
   // --- helpers --------------------------------------------------------

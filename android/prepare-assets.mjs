@@ -17,6 +17,8 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import { generateViewerHtml } from '../build/pdf-viewer-html.mjs';
+import { copyBridgeWithVersion } from '../build/bridge-version.mjs';
+import { ensureExtArtifact } from '../build/ext-artifact.mjs';
 
 const require = createRequire(import.meta.url);
 const HERE = path.dirname(fileURLToPath(import.meta.url)); // Eupub/android
@@ -35,10 +37,19 @@ fs.mkdirSync(READER, { recursive: true });
 fs.mkdirSync(ENGINE, { recursive: true });
 fs.mkdirSync(PDF, { recursive: true });
 
-// 1. Reuse the renderer verbatim (the shared, host-agnostic half).
-for (const f of ['reader.js', 'epub.js', 'viewer-runtime.js', 'reader.css', 'android-bridge.js', 'purify.js']) {
+// 1. Reuse the renderer verbatim (the shared, host-agnostic half). The bridge
+//    shim is the one exception: it carries the version the About panel shows,
+//    baked in here rather than fetched over a Kotlin channel that would have to
+//    exist only for this (see build/bridge-version.mjs).
+for (const f of ['reader.js', 'epub.js', 'viewer-runtime.js', 'reader.css', 'purify.js']) {
   fs.copyFileSync(path.join(RENDERER, f), path.join(READER, f));
 }
+const pkgVersion = JSON.parse(fs.readFileSync(path.join(EUPUB, 'package.json'), 'utf8')).version;
+copyBridgeWithVersion(
+  path.join(RENDERER, 'android-bridge.js'),
+  path.join(READER, 'android-bridge.js'),
+  pkgVersion
+);
 
 // 2. Android index.html: the desktop page with (a) the CSP retargeted to the
 //    single virtual origin, and (b) the bridge shim + host config injected
@@ -99,10 +110,19 @@ fs.cpSync(pdfjsSrc, PDFJS, { recursive: true });
 
 // 7. The mobile PDF viewer bundle (extension APIs aliased out; no baked lexicon —
 //    it fetches each page's subset through the bridge, like the engine does).
+// Rebuilt when STALE, not merely when absent. euspell_ext/dist is gitignored, so
+// a bundle built before the last source change survives there, and an existence
+// check ships it: that is exactly how an APK once reproduced on device the very
+// bug whose fix was sitting unbuilt in the source tree. The desktop path already
+// guarded this; both now share build/ext-artifact.mjs.
 const pdfBundle = path.join(EXT, 'dist', 'pdf-viewer.mobile.js');
-if (!fs.existsSync(pdfBundle)) {
-  throw new Error('euspell_ext/dist/pdf-viewer.mobile.js missing — run "npm run build:pdf:mobile" in euspell_ext first.');
-}
+ensureExtArtifact({
+  ext: EXT,
+  artifact: pdfBundle,
+  script: 'build:pdf:mobile',
+  sources: [path.join(EXT, 'src')],
+  relativeTo: EUPUB,
+});
 fs.copyFileSync(pdfBundle, path.join(PDF, 'pdf-viewer.mobile.js'));
 fs.copyFileSync(path.join(EXT, 'src', 'pdf', 'viewer.css'), path.join(PDF, 'viewer.css'));
 

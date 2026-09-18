@@ -173,3 +173,92 @@ test('a child frame relays native calls through the top frame', async () => {
   top.__eupubResolve(top.AndroidBridge.calls[0].id, true, JSON.stringify([['people', { encoding: 101 }]]));
   assert.deepEqual(await p, [['people', { encoding: 101 }]]);
 });
+
+// --- the baked-in version (build/bridge-version.mjs) ------------------------
+// The About panel asks window.eupub.version(). The desktop preload forwards it
+// to app.getVersion(); a WebView host has no such channel, so the value is
+// substituted into the shim at asset-prep time rather than costing a Kotlin
+// @JavascriptInterface method and a Swift message-handler case.
+
+const os = require('node:os');
+const PKG_VERSION = require('../package.json').version;
+const RENDERER_DIR = path.join(__dirname, '..', 'src', 'renderer');
+const bridgeVersion = () => import('../build/bridge-version.mjs');
+const tmpdir = (tag) => fs.mkdtempSync(path.join(os.tmpdir(), tag));
+
+/** The shim as prepare-assets writes it, running in the WebView-like world. */
+async function makeBakedWorld(version) {
+  const { copyBridgeWithVersion } = await bridgeVersion();
+  const dest = path.join(tmpdir('eupub-ver-'), 'android-bridge.js');
+  copyBridgeWithVersion(path.join(RENDERER_DIR, 'android-bridge.js'), dest, version);
+  const window = { AndroidBridge: {}, fetch: () => Promise.reject(new Error('unused')) };
+  vm.runInNewContext(fs.readFileSync(dest, 'utf8'), {
+    window, Map, Promise, JSON, encodeURIComponent, Error, String, console,
+  });
+  return window;
+}
+
+test('an unprepped shim reports no version rather than inventing one', async () => {
+  // Reading the shim straight out of src/ with no asset prep is a real case, and
+  // a hardcoded placeholder would be a number the About panel could show that
+  // was never shipped.
+  const { window } = makeWorld();
+  assert.equal(await window.eupub.version(), null);
+});
+
+test('asset prep bakes package.json version into the shim', async () => {
+  const window = await makeBakedWorld(PKG_VERSION);
+  assert.equal(await window.eupub.version(), PKG_VERSION);
+});
+
+test('the substitution survives being re-run over its own output', async () => {
+  // prepare-assets is run repeatedly and Android's output directory is not
+  // cleared first, so the marker has to still match after a substitution —
+  // otherwise the second run throws on a file that is already correct.
+  const { copyBridgeWithVersion } = await bridgeVersion();
+  const dir = tmpdir('eupub-ver2-');
+  const once = path.join(dir, 'once.js');
+  const twice = path.join(dir, 'twice.js');
+  copyBridgeWithVersion(path.join(RENDERER_DIR, 'android-bridge.js'), once, '9.9.9');
+  copyBridgeWithVersion(once, twice, '9.9.9');
+  assert.equal(fs.readFileSync(once, 'utf8'), fs.readFileSync(twice, 'utf8'));
+});
+
+test('a shim with no marker is refused, not silently passed through', async () => {
+  const { copyBridgeWithVersion } = await bridgeVersion();
+  const dir = tmpdir('eupub-ver3-');
+  const src = path.join(dir, 'no-marker.js');
+  fs.writeFileSync(src, '(function (root) { root.eupub = {}; })(window);\n');
+  assert.throws(
+    () => copyBridgeWithVersion(src, path.join(dir, 'out.js'), '1.0.0'),
+    /version marker not found/
+  );
+});
+
+test('the desktop half asks Electron for the app version', () => {
+  // test/about.js cannot cover this: run as `electron <script>` there is no
+  // application package.json loaded, so app.getVersion() reports Electron's own
+  // version and an assertion there would pin that instead of the contract. The
+  // contract is that main asks Electron (which reads package.json for the real
+  // app, packaged or via `electron .`) and preload forwards it under the same
+  // name the mobile bridges use.
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'src', 'preload.js'), 'utf8');
+  assert.match(main, /ipcMain\.handle\('app:version', \(\) => app\.getVersion\(\)\)/);
+  assert.match(preload, /version: \(\) => ipcRenderer\.invoke\('app:version'\)/);
+});
+
+test('both bridges carry the marker asset prep looks for', () => {
+  // The two shims are maintained by hand and are meant to be identical apart
+  // from their transport; a marker dropped from one would ship that platform's
+  // About panel stuck on "unknown", with the build still passing.
+  for (const f of ['android-bridge.js', 'ios-bridge.js']) {
+    const js = fs.readFileSync(path.join(RENDERER_DIR, f), 'utf8');
+    assert.match(js, /var VERSION = .*; \/\/ __EUPUB_VERSION__/, f + ' must carry the version marker');
+    assert.match(
+      js,
+      /version: function \(\) \{ return Promise\.resolve\(VERSION\); \}/,
+      f + ' must expose version()'
+    );
+  }
+});

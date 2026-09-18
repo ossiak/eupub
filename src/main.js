@@ -335,6 +335,13 @@ ipcMain.handle('system:naturalScroll', () => {
   }
 });
 
+// The running app's version, for the About panel. app.getVersion() reads the
+// packaged metadata (package.json in development, the built app's own manifest
+// once packaged), which is the same field Android's build.gradle.kts and iOS's
+// prepare-assets.mjs derive their store versions from — so the three cannot
+// disagree about what this build is.
+ipcMain.handle('app:version', () => app.getVersion());
+
 // --- the app://eupub origin (embedded PDF viewer) ---------------------------
 
 // Opened PDFs, id -> absolute path. The id (not the path) appears in the served

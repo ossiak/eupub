@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import { generateViewerHtml } from '../../build/pdf-viewer-html.mjs';
+import { copyBridgeWithVersion } from '../../build/bridge-version.mjs';
 
 const require = createRequire(import.meta.url);
 const HERE = path.dirname(fileURLToPath(import.meta.url)); // Eupub/ios/Eupub
@@ -42,9 +43,16 @@ fs.mkdirSync(PDF, { recursive: true });
 
 // 1. Reuse the renderer verbatim (the shared, host-agnostic half) + the iOS
 //    bridge shim (replaces the Electron preload, as android-bridge.js does).
-for (const f of ['reader.js', 'epub.js', 'viewer-runtime.js', 'reader.css', 'ios-bridge.js', 'purify.js']) {
+//    The shim is copied through a substitution, not verbatim: it carries the
+//    version the About panel shows, baked in here rather than fetched over a
+//    Swift channel that would exist only for this (see build/bridge-version.mjs).
+for (const f of ['reader.js', 'epub.js', 'viewer-runtime.js', 'reader.css', 'purify.js']) {
   fs.copyFileSync(path.join(RENDERER, f), path.join(READER, f));
 }
+// Read here rather than at the Version.xcconfig step below, which needs it too:
+// one read, and the bundle's bridge cannot disagree with MARKETING_VERSION.
+const version = JSON.parse(fs.readFileSync(path.join(EUPUB, 'package.json'), 'utf8')).version;
+copyBridgeWithVersion(path.join(RENDERER, 'ios-bridge.js'), path.join(READER, 'ios-bridge.js'), version);
 
 // 2. iOS index.html: the desktop page with (a) a viewport meta so the WKWebView
 //    lays out at device width (else clientWidth — which the column geometry is
@@ -138,8 +146,7 @@ makePdf(path.join(ASSETS, 'sample.pdf'));
 //    assets before xcodegen, so it always exists by the time the project needs
 //    it. CFBundleVersion must rise per upload within one version string — bump
 //    BUILD_OFFSET (not package.json) when resubmitting the same version.
-const version = JSON.parse(fs.readFileSync(path.join(EUPUB, 'package.json'), 'utf8')).version;
-const parts = /^(\d+)\.(\d+)\.(\d+)/.exec(version);
+const parts = /^(\d+)\.(\d+)\.(\d+)/.exec(version); // read at step 1, above
 if (!parts) throw new Error(`package.json version '${version}' is not major.minor.patch`);
 const BUILD_OFFSET = 0;
 const [major, minor, patch] = parts.slice(1).map(Number);

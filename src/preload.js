@@ -44,6 +44,10 @@ contextBridge.exposeInMainWorld('eupub', {
   // open:pending handler in main.js). `anyOpenArrived` is belt-and-braces.
   hasPendingOpen: () => ipcRenderer.invoke('open:pending').then((pending) => pending || anyOpenArrived),
 
+  // The running app's version, for the About panel. The mobile bridges answer
+  // the same call from a string baked in at asset-prep time.
+  version: () => ipcRenderer.invoke('app:version'),
+
   // Engine + filesystem.
   engineSource: () => ipcRenderer.invoke('engine:source'),
   readText: (filePath) => ipcRenderer.invoke('fs:readText', filePath),

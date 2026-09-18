@@ -24,6 +24,14 @@
   var MOUNT = cfg.mount || '/book'; // path prefix mapped to the extraction dir
   var ENGINE_URL = cfg.engineUrl || ORIGIN + '/assets/eupub-engine.js';
 
+  // The app version, baked in by android/prepare-assets.mjs from package.json —
+  // the same field build.gradle.kts derives versionName from, so this string and
+  // the one Play shows cannot disagree. Baked rather than fetched over the
+  // bridge so About costs no Kotlin: there is no @JavascriptInterface for it.
+  // Stays null when the reader is opened straight from src/ with no asset prep,
+  // which the About panel reports as unknown rather than inventing a number.
+  var VERSION = null; // __EUPUB_VERSION__
+
   // The current book's extraction root, captured from openPath's result so
   // fileURL() can turn an absolute chapter/resource path into a served URL.
   var currentRoot = '';
@@ -191,6 +199,7 @@
   root.eupub = {
     pickEpub: function () { return nativeCall('pickEpub').then(rememberRoot); },
     openPath: function (p) { return nativeCall('openPath', [p]).then(rememberRoot); },
+    version: function () { return Promise.resolve(VERSION); },
     engineSource: function () { return fetchText(ENGINE_URL); },
     readText: function (p) { return fetchText(fileURL(p)); },
     lexiconSubset: function (words) { return nativeCall('lexiconSubset', [words]); },
