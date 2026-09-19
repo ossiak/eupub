@@ -148,7 +148,7 @@ makePdf(path.join(ASSETS, 'sample.pdf'));
 //    BUILD_OFFSET (not package.json) when resubmitting the same version.
 const parts = /^(\d+)\.(\d+)\.(\d+)/.exec(version); // read at step 1, above
 if (!parts) throw new Error(`package.json version '${version}' is not major.minor.patch`);
-const BUILD_OFFSET = 0;
+const BUILD_OFFSET = 1;
 const [major, minor, patch] = parts.slice(1).map(Number);
 const build = major * 10000 + minor * 100 + patch + BUILD_OFFSET;
 fs.writeFileSync(
