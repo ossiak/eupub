@@ -18,6 +18,10 @@ html, body {
   background: var(--bg);
   color: var(--text);
   overflow: hidden;
+  /* Kill iOS WKWebView's double-tap-to-zoom on the app chrome — a fast double
+     tap on A−/A+ (or anywhere) would otherwise zoom the whole reader window.
+     "manipulation" keeps taps and scrolling; touch-only, so a no-op off iOS. */
+  touch-action: manipulation;
 }
 
 body {

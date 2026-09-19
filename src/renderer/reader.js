@@ -950,7 +950,11 @@
     // the viewer runtime so the page transform and column pitch match exactly;
     // here we set only cosmetics. html clips; body is transformed horizontally.
     return `
-      html { font-size:${fs}px; height:100%; margin:0; overflow:hidden; }
+      /* Pin text to the authored size: iOS WKWebView's text autosizing otherwise
+         inflates the font on the wide columns of landscape — and boosts a SMALLER
+         specified size MORE, so pressing A− can read LARGER — with only a rotate
+         clearing it. Android/desktop don't boost, so 100% is a no-op there. */
+      html { font-size:${fs}px; -webkit-text-size-adjust:100%; text-size-adjust:100%; height:100%; margin:0; overflow:hidden; }
       body {
         line-height:1.6; background:${bg}; color:${fg};
         font-family:Georgia,"Times New Roman",serif; will-change:transform;
