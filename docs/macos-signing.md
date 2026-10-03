@@ -92,7 +92,12 @@ skips notarization — that's the current unsigned default.
 ```sh
 # --- signing identity ---
 # Local: nothing to set — the Developer ID cert is found in your keychain.
-# (If you have several identities, pin one: export CSC_NAME="Developer ID Application: Your Name (TEAMID)")
+# If you hold more than one Developer ID cert, note that CSC_NAME cannot tell
+# them apart: certificates issued by the old sub-CA and by G2 carry an
+# IDENTICAL display name. Either keep only one in the login keychain, or verify
+# the chain after signing (the issuer OU is the only difference):
+#   codesign -d --extract-certificates=/tmp/c "release/mac-arm64/Eupub.app"
+#   openssl x509 -inform DER -in /tmp/c1 -noout -subject   # want OU=G2
 
 # --- notarization creds (Option A shown) ---
 export APPLE_API_KEY=~/keys/AuthKey_XXXXXXXXXX.p8
@@ -162,6 +167,15 @@ no longer applies to your users — drop that from the macOS section and just sa
 - **Renewal.** A Developer ID Application certificate is valid ~5 years; the
   membership renews yearly. If the cert expires, existing notarized builds keep
   working — only new signing needs a fresh cert.
+- **Sub-CA migration (2027-02-01).** Apple's original *Developer ID
+  Certification Authority* expires on 2027-02-01, and every certificate it
+  issued stops working that day regardless of the cert's own expiry. Request
+  replacements from the **G2 Sub-CA** (certificates issued under G2 run to
+  2031-09-17). Notarized apps carrying a secure timestamp keep working, but
+  `.pkg` installers signed under the old sub-CA will refuse to install after
+  that date and must be re-signed. Because both certs share a display name,
+  pin by SHA-1 hash (`security find-identity -v -p codesigning`) rather than
+  by name.
 - **Which chip.** `dist:mac` targets `--arm64` (Apple Silicon). To also ship
   Intel, add `--x64` (or `--universal`) and a matching `${arch}` artifact; each
   arch is signed and notarized the same way.

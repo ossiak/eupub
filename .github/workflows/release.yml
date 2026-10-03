@@ -239,6 +239,18 @@ jobs:
               *"Developer ID Application"*) ;;
               *) echo "::error::no Developer ID Application identity after import"; exit 1 ;;
             esac
+            # Both Developer ID sub-CAs issue leaves with an IDENTICAL CN, so only
+            # the issuer OU separates G2 from the authority that expires
+            # 2027-02-01. A stale CSC_LINK would build and ship fine today and
+            # stop installing in February, so fail here rather than at a user's
+            # Gatekeeper prompt.
+            issuer="$(security find-certificate -a -c "Developer ID Application" -p "$kc" \
+              | openssl x509 -noout -issuer 2>/dev/null)"
+            echo "issuer: $issuer"
+            case "$issuer" in
+              *OU=G2*) echo "certificate issued by the G2 sub-CA" ;;
+              *) echo "::error::CSC_LINK holds a certificate from the pre-G2 sub-CA (expires 2027-02-01); re-export CSC_LINK and CSC_KEY_PASSWORD from a G2 certificate"; exit 1 ;;
+            esac
           else
             echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
             echo "No signing cert configured -- building an unsigned dmg."
@@ -255,6 +267,23 @@ jobs:
       - name: Build dmg
         working-directory: eupub
         run: npm run dist:mac
+
+      # electron-builder finds the identity by auto-discovery, so the import check
+      # above cannot be the only gate -- assert that what actually got signed
+      # chains to G2. c1 is the intermediate; c0 is the leaf.
+      - name: Verify signing chain (G2 sub-CA)
+        if: env.CSC_IDENTITY_AUTO_DISCOVERY != 'false'
+        working-directory: eupub
+        run: |
+          app="release/mac-arm64/Eupub.app"
+          tmp="$(mktemp -d)"
+          codesign -d --extract-certificates="$tmp/c" "$app" > /dev/null 2>&1
+          subject="$(openssl x509 -inform DER -in "$tmp/c1" -noout -subject 2>/dev/null)"
+          echo "intermediate: $subject"
+          case "$subject" in
+            *OU=G2*) echo "signing chain ok (G2 sub-CA)" ;;
+            *) echo "::error::$app was signed via the pre-G2 sub-CA (expires 2027-02-01)"; exit 1 ;;
+          esac
 
       # electron-builder (above) notarizes + staples the .app, but not the .dmg
       # wrapper — so a downloaded dmg still trips Gatekeeper on open even though the
