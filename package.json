@@ -86,6 +86,7 @@
         }
       ]
     },
+    "afterSign": "build/verify-signing-chain.js",
     "mac": {
       "target": [
         "dmg"
