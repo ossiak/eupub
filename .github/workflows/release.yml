@@ -285,10 +285,44 @@ jobs:
             *) echo "::error::$app was signed via the pre-G2 sub-CA (expires 2027-02-01)"; exit 1 ;;
           esac
 
-      # electron-builder (above) notarizes + staples the .app, but not the .dmg
-      # wrapper — so a downloaded dmg still trips Gatekeeper on open even though the
-      # app inside is clean. Notarize and staple the dmg itself (its app is already
-      # notarized, so this pass is quick) so the download opens with no prompt.
+      # electron-builder does not sign the dmg wrapper (dmg.sign defaults off), and
+      # notarizing is not signing: submitting and stapling leaves a ticket but no
+      # code signature, so spctl still reports "no usable signature" on the
+      # download. 0.3.5 and 0.3.6 both shipped that way. Sign it here, before
+      # notarization, exactly as build/dist-safari.sh does for the Safari dmg.
+      - name: Sign the dmg
+        if: env.CSC_IDENTITY_AUTO_DISCOVERY != 'false'
+        working-directory: eupub
+        run: |
+          dmg=$(ls release/Eupub-*-arm64.dmg)
+          # Select by issuer, not by position: a keychain holding both a G2 and a
+          # pre-G2 certificate lists them under an identical name, and the first
+          # one is not necessarily the right one.
+          devid=""
+          for h in $(security find-identity -v -p codesigning | awk '/Developer ID Application/ {print $2}'); do
+            iss="$(security find-certificate -a -Z -p -c "Developer ID Application" \
+                   | awk -v h="$h" '/^SHA-1 hash:/{keep=($3==h)} keep' \
+                   | openssl x509 -noout -issuer 2>/dev/null)"
+            case "$iss" in *OU=G2*) devid="$h"; break ;; esac
+          done
+          if [ -z "$devid" ]; then
+            echo "::error::no G2-issued Developer ID Application identity to sign the dmg with"; exit 1
+          fi
+          echo "signing with $devid"
+          codesign --force --timestamp --sign "$devid" "$dmg"
+          codesign --verify --strict --verbose=2 "$dmg"
+          # Same sub-CA gate the .app gets: c1 is the intermediate.
+          tmp="$(mktemp -d)"
+          codesign -d --extract-certificates="$tmp/c" "$dmg" > /dev/null 2>&1
+          subject="$(openssl x509 -inform DER -in "$tmp/c1" -noout -subject 2>/dev/null)"
+          echo "intermediate: $subject"
+          case "$subject" in
+            *OU=G2*) echo "dmg signing chain ok (G2 sub-CA)" ;;
+            *) echo "::error::$dmg was signed via the pre-G2 sub-CA (expires 2027-02-01)"; exit 1 ;;
+          esac
+
+      # With the dmg now signed, notarize and staple it so the download opens with
+      # no prompt (its app is already notarized, so this pass is quick).
       # Reuses the API-key creds the "Configure signing" step put in the env.
       - name: Notarize and staple the dmg
         if: env.APPLE_API_KEY_ID != ''
