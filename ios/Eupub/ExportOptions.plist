@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Export options for the App Store build. Used by:
+
+    xcodebuild -exportArchive -archivePath build/Eupub.xcarchive \
+      -exportOptionsPlist ExportOptions.plist -exportPath build/export \
+      -allowProvisioningUpdates
+
+  The archive itself is signed with Apple Development (project.yml sets
+  CODE_SIGNING_ALLOWED: NO for the simulator, so the archive overrides it);
+  this re-signs with Apple Distribution, which is what App Store Connect
+  requires. signingStyle automatic lets Xcode fetch the distribution
+  certificate and profile, so nothing has to be kept in the keychain.
+-->
+<plist version="1.0">
+<dict>
+  <key>method</key><string>app-store-connect</string>
+  <key>teamID</key><string>5ZTUW79KSB</string>
+  <key>signingStyle</key><string>automatic</string>
+  <key>destination</key><string>export</string>
+</dict>
+</plist>
